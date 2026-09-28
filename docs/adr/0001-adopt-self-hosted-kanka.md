@@ -125,9 +125,12 @@ starting with Kaidoho.
      aithne gate.
    - The double login is accepted by lucas42 (decision 4 on lucas42/lucos#309) and may be
      revisited.
-   - Only two exact paths bypass the gate: `/_info` (monitoring; decision 7) and
+   - `auth_request` is set at nginx **server level**, so any new `location` is gated
+     by default. Only two exact paths bypass it: `/_info` (monitoring; decision 7) and
      `/favicon.ico` (the homepage tile's icon), each an nginx `location =` with
-     `auth_request off`. Everything else is gated, Kanka's `/api` included.
+     `auth_request off`. Everything else is gated, Kanka's `/api` included. The
+     shipped image has **no ungated listener**: its nginx serves one server block, and
+     that block is gated.
    - **The domain is not routed until the gate is in place.** Kanka's install must never
      be reachable from the internet ungated, even briefly.
 
@@ -155,10 +158,23 @@ starting with Kaidoho.
      mentions, and images are re-uploaded.
    - NPC stat blocks are carried across as page content. Turning them into
      attribute-template data is a separate, manual step lucas42 controls.
-   - The script targets an empty campaign, so a bad run is thrown away and repeated. It
-     runs **inside the compose network** (a one-off container talking to the app
-     directly), not through the public gate. That is why decision 3 needs no
-     exception for `/api`.
+   - The script targets an empty campaign, so a bad run is thrown away and repeated.
+   - **How it reaches Kanka's API.** Because the shipped nginx is gated end to end,
+     the script can't simply talk to the app directly. Instead, a **migration-only
+     compose override file** (never used by the deploy) adds one extra nginx server
+     block with no `auth_request`. That block serves Kanka's `/api` on a port that
+     is **never published to the host**. The script runs as a one-off container on the
+     project's own network and authenticates with a Kanka API token.
+   - When the run is finished, the app is redeployed from the shipped configuration,
+     which removes the ungated listener. The override is never part of the image, and
+     it never runs during normal operation.
+   - This is safe only because `lucos_campaigns`' compose network is
+     **project-private**: the services join only their own project's default network,
+     and share no network with other estate services. Nothing else can reach the
+     temporary port. A change that attaches this project to a shared network must
+     revisit this.
+   - Keeping `/api` gated in normal operation is why decision 3 needs no exception
+     for it.
    - **Kaidoho stays in `lucos_worlds`.** After cutover, its book is made **view-only**
      there rather than deleted, so the two copies can't quietly drift apart.
 
@@ -197,6 +213,13 @@ starting with Kaidoho.
   applied in order with a backup first, with nothing automatic telling us one exists
   (see Deferred work). This is the July objection, and it has got worse since then, not
   better.
+- **It is also a security cost: dependency CVEs are invisible to this repo.** Kanka's
+  PHP and npm lockfiles live upstream, so Dependabot raises no alerts here for Laravel
+  or Kanka's own dependencies, only for our base images. Mitigations are
+  `composer audit` / `yarn audit` output at image build time, and watching
+  `owlchester/kanka` security advisories (#5). Neither closes the gap: a vulnerable
+  dependency stays live until we choose to upgrade. This is the largest residual
+  risk in the design, and it is accepted.
 - **The licence is ambiguous.** Commons Clause with no named base licence. Fine for
   personal use, but recorded because it is not the clean position `lucos_worlds` had
   with MIT.
