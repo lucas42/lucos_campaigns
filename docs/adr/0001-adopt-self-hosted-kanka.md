@@ -125,7 +125,9 @@ starting with Kaidoho.
      aithne gate.
    - The double login is accepted by lucas42 (decision 4 on lucas42/lucos#309) and may be
      revisited.
-   - No path, including Kanka's `/api`, bypasses the gate.
+   - Only two exact paths bypass the gate: `/_info` (monitoring; decision 7) and
+     `/favicon.ico` (the homepage tile's icon), each an nginx `location =` with
+     `auth_request off`. Everything else is gated, Kanka's `/api` included.
    - **The domain is not routed until the gate is in place.** Kanka's install must never
      be reachable from the internet ungated, even briefly.
 
@@ -155,14 +157,20 @@ starting with Kaidoho.
      attribute-template data is a separate, manual step lucas42 controls.
    - The script targets an empty campaign, so a bad run is thrown away and repeated. It
      runs **inside the compose network** (a one-off container talking to the app
-     directly), not through the public gate. That is why decision 3 can allow no
-     exceptions.
+     directly), not through the public gate. That is why decision 3 needs no
+     exception for `/api`.
    - **Kaidoho stays in `lucos_worlds`.** After cutover, its book is made **view-only**
      there rather than deleted, so the two copies can't quietly drift apart.
 
-7. **Monitoring.** Kanka serves no `/_info`. Until that is addressed (deferred work), the
-   system is registered in `lucos_configy` like any other, and its monitoring gap is
-   explicit, not accidental.
+7. **Monitoring.** Kanka serves no `/_info`, and it has no route hook we could use
+   without patching an upstream file. So our image adds a standalone
+   `public/_info.php`. It boots Kanka's Laravel app in-process and reports four
+   checks: the app booted, the database, search, and the oauth2-proxy gate (a
+   no-cookie `/oauth2/auth` must return 401). It is served at exactly `/_info`,
+   outside the gate. The full design is lucas42/lucos_campaigns#4, which ships
+   straight after #2: once the system is registered in `lucos_configy`, monitoring
+   polls `/_info`, and until #4 lands the gate answers with a redirect, so the
+   system shows as permanently red.
 
 ## Consequences
 
@@ -174,8 +182,9 @@ starting with Kaidoho.
 - No patch to Kanka's authentication code. The ES256 problem that forced
   `lucos_worlds` ADR-0002 doesn't arise, because oauth2-proxy already handles ES256 in
   production.
-- The public attack surface is limited to oauth2-proxy until aithne has authenticated
-  someone. That matters more than usual for an app whose own developers say not to
+- The public attack surface, until aithne has authenticated someone, is oauth2-proxy
+  plus two fixed, input-free paths: a static favicon and `/_info`, which boots
+  Laravel but routes no request into Kanka. That matters more than usual for an app whose own developers say not to
   expose it to the web.
 - Four containers rather than upstream's nine.
 
@@ -199,9 +208,14 @@ starting with Kaidoho.
   deferred, and campaign CSS isn't available to us, so it will mean CSS baked into our
   image: a small patch that breaks quietly when upstream markup changes.
 - **Double login**, as accepted.
-- **Monitoring blind spot:** a sidecar in front of an app can't be seen by the app's own
-  health checks. This is the lesson from incident lucas42/lucos#265, now applied to a
-  second system.
+- **A sidecar in the request path.** The `auth-gate` check (decision 7) covers the
+  blind spot from incident lucas42/lucos#265: a crash-looping proxy now shows up in
+  `/_info`. Two proxy failures stay invisible to it, a wrong client secret and a
+  missing aithne client registration, because the proxy only discovers them at the
+  login callback. Those rely on deploy ordering, not on a probe.
+- **`/_info` is exposed publicly.** It boots Kanka's Laravel app, so a broken upgrade
+  shows up there, which is the point. It returns only the standard schema, and on
+  failure only the exception class.
 - **avalon's memory headroom shrinks.** PHP-FPM, a second MariaDB and Meilisearch
   together are plausibly 0.7–1.2 GB on ~3 GB free. That is an estimate, not a
   measurement. Meilisearch indexing memory should be capped.
