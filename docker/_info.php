@@ -91,6 +91,9 @@ if ($app !== null) {
 	}
 	try {
 		$searchHost = rtrim((string) $app['config']->get('scout.meilisearch.host'), '/');
+		if ($searchHost === '') {
+			$checks['search'] = check(false, 'Whether Meilisearch reports itself available', 'not configured');
+		}
 	} catch (\Throwable $e) {
 		$checks['search'] = check(false, 'Whether Meilisearch reports itself available', failure('search', $e));
 	}
@@ -123,6 +126,11 @@ $checks['auth-gate'] = check(
 	'Whether the oauth2-proxy sidecar answers auth checks (expects 401 for a request with no cookie)',
 	$error !== '' ? 'request failed' : "HTTP $code",
 );
+
+// The check set is fixed: a check that didn't run is a failure, never an absence.
+foreach (['app', 'database', 'search', 'auth-gate'] as $name) {
+	$checks[$name] ??= check(false, "Whether the $name check ran", 'not checked');
+}
 
 $version = getenv('VERSION');
 $info = [

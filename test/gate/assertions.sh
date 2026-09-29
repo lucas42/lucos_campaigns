@@ -36,6 +36,7 @@ up)
 	expect "uploaded-style .php is never executed" 404 "$(status "$BASE/storage/a.php")"
 	;;
 sidecar-down)
+	sleep 4 # drain the /_info rate limiter after the burst test (2r/s, excess ~6)
 	for p in / /api/1.0/campaigns /register; do
 		expect "GET $p fails closed with the sidecar down" '5[0-9][0-9]' "$(status "$BASE$p")"
 	done

@@ -21,7 +21,7 @@ up)
 	done
 	;;
 search-down)
-	sleep 1 # let the rate limiter drain
+	sleep 4 # drain the /_info rate limiter (2r/s)
 	expect "GET /_info still answers 200 with search down" 200 "$(status "$BASE/_info")"
 	body=$(info)
 	expect "/_info search check fails with search down" false "$(echo "$body" | jq '.checks.search.ok')"
