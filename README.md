@@ -1,6 +1,6 @@
 # lucos_campaigns
 
-Self-hosted [Kanka](https://github.com/owlchester/kanka) for running TTRPG campaigns, at `campaigns.l42.eu`. The design is [ADR-0001](docs/adr/0001-adopt-self-hosted-kanka.md).
+Self-hosted [Kanka](https://github.com/owlchester/kanka) for running TTRPG campaigns. The design is [ADR-0001](docs/adr/0001-adopt-self-hosted-kanka.md).
 
 ## Shape
 
@@ -17,7 +17,24 @@ Upstream's Docker/Sail setup is not used anywhere.
 
 ## Credentials (lucos_creds)
 
-Production values can only be set by lucas42 and must exist **before the first production deploy**: `APP_KEY` (`base64:` plus 32 random bytes), `DB_PASSWORD`, `DB_ROOT_PASSWORD`, `MEILI_MASTER_KEY`, `OAUTH2_PROXY_COOKIE_SECRET` (32 random bytes, urlsafe base64), and the linked aithne client credential (`KEY_LUCOS_AITHNE`, with `AITHNE_ORIGIN`, `AITHNE_TOKEN_URL`, `AITHNE_JWKS_URL`). `campaigns:use` must also be granted to a principal in aithne.
+These must all exist in `lucos_creds` for the environment **before that environment's first deploy**. `PORT`, `APP_ORIGIN` and the other standard variables are provided by `lucos_creds` automatically.
+
+Randomly generated secrets, specific to this system:
+
+- `APP_KEY`: `base64:` followed by 32 random bytes, base64-encoded. Encrypts Kanka's sessions and other encrypted data, so changing it later invalidates them.
+- `DB_PASSWORD`: the MariaDB password for Kanka's database user.
+- `DB_ROOT_PASSWORD`: the MariaDB root password.
+- `MEILI_MASTER_KEY`: shared by Meilisearch and Kanka's search client.
+- `OAUTH2_PROXY_COOKIE_SECRET`: 32 random bytes, urlsafe-base64-encoded. Signs the oauth2-proxy session cookie.
+
+Values that refer to aithne, which provides login:
+
+- `KEY_LUCOS_AITHNE`: the client secret for this system's aithne client, supplied by the linked credential from `lucos_aithne`.
+- `AITHNE_ORIGIN`, `AITHNE_TOKEN_URL`, `AITHNE_JWKS_URL`: the URLs of aithne's issuer, token and JWKS endpoints. These point at aithne, so take them from aithne's own configuration.
+
+Users also need the `campaigns:use` scope granted in aithne to get past the gate.
+
+Optional: `APP_REGISTRATION_ENABLED` (default `false`), only used during [first user](#first-user) setup.
 
 ## First user
 
