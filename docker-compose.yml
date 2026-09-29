@@ -60,7 +60,7 @@ services:
 
   lucos_campaigns_db:
     container_name: lucos_campaigns_db
-    image: mariadb:11.4.12
+    image: mariadb:13.0.2
     environment:
       - MARIADB_DATABASE=kanka
       - MARIADB_USER=kanka
