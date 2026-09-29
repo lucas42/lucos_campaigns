@@ -6,10 +6,12 @@ Reads BookStack, writes Kanka through the aithne gate, never modifies BookStack.
 """
 import argparse
 import getpass
+import hashlib
 import html
 import json
 import os
 import re
+import shutil
 import sys
 import time
 from urllib.parse import unquote, urlparse
@@ -48,6 +50,8 @@ BOOKSTACK_ORIGIN = "https://worlds.l42.eu"
 KANKA_ORIGIN = "https://campaigns.l42.eu"
 GATE_COOKIE_RE = re.compile(r"^_oauth2_proxy(_\d+)?$")
 MAX_REPROMPTS = 3
+# Waits between retries of a read that hit a restarting server (a deploy recreates the app for a minute or two).
+RETRY_WAITS = (5, 10, 20, 40, 60, 60)
 
 
 TTY_PATH = "/dev/tty"
@@ -89,7 +93,7 @@ def ask(label):
                 else:
                     buf.append(byte)
     finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+        termios.tcsetattr(fd, termios.TCSAFLUSH, old)
         os.write(fd, b"\n")
         os.close(fd)
 
@@ -120,9 +124,20 @@ class Api:
     def call(self, method, path, **kw):
         url = path if path.startswith("http") else self.base + path
         expiries = 0
-        for _ in range(8):
+        waits = list(RETRY_WAITS)
+        for _ in range(8 + len(RETRY_WAITS)):
             # Never follow redirects: a gate redirect must not carry credentials on to aithne.
-            r = self.s.request(method, url, timeout=120, allow_redirects=False, **kw)
+            try:
+                r = self.s.request(method, url, timeout=120, allow_redirects=False, **kw)
+            except (requests.ConnectionError, requests.Timeout):
+                if method != "GET" or not waits:
+                    raise
+                time.sleep(waits.pop(0))
+                continue
+            # Only reads are retried after a 502/503/504: a repeated write could duplicate what the server already did.
+            if method == "GET" and r.status_code in (502, 503, 504) and waits:
+                time.sleep(waits.pop(0))
+                continue
             if self.expired(r):
                 expiries += 1
                 if expiries > MAX_REPROMPTS:
@@ -189,6 +204,49 @@ def mapping_for(chapter_name):
     return listed[0], listed[1] or chapter_name, True
 
 
+class Cache:
+    """On-disk copy of what was read from BookStack (page content and images), so a re-run doesn't download it again.
+    Holds only BookStack content, never a token or cookie. The content is private: delete the directory when done."""
+
+    def __init__(self, root, refresh=False):
+        self.root = root
+        if refresh:
+            shutil.rmtree(root, ignore_errors=True)
+        os.makedirs(root, mode=0o700, exist_ok=True)
+        for sub in ("pages", "images"):
+            os.makedirs(os.path.join(root, sub), mode=0o700, exist_ok=True)
+
+    def _write(self, path, data):
+        tmp = path + ".tmp"
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+        os.replace(tmp, path)
+
+    def page(self, pid, stamp):
+        """The cached page if BookStack still reports the same updated_at; None otherwise."""
+        try:
+            with open(os.path.join(self.root, "pages", f"{pid}.json")) as f:
+                cached = json.load(f)
+        except (OSError, ValueError):
+            return None
+        return cached if stamp and cached.get("stamp") == stamp else None
+
+    def put_page(self, pid, stamp, page):
+        self._write(os.path.join(self.root, "pages", f"{pid}.json"), json.dumps({**page, "stamp": stamp}).encode())
+
+    def image(self, path, fetch):
+        """Image bytes by BookStack path (a path names one immutable upload), fetched once."""
+        f = os.path.join(self.root, "images", hashlib.sha256(path.encode()).hexdigest())
+        try:
+            with open(f, "rb") as fh:
+                return fh.read()
+        except OSError:
+            data = fetch()
+            self._write(f, data)
+            return data
+
+
 def fetch_book(bs, book_name):
     books = bs.json("GET", "/api/books", params={"filter[name]": book_name, "count": 100})["data"]
     if len(books) != 1:
@@ -198,23 +256,30 @@ def fetch_book(bs, book_name):
     for item in book["contents"]:
         if item["type"] == "chapter":
             for p in item.get("pages", []):
-                pages.append((item["name"], p["id"]))
+                pages.append((item["name"], p))
         else:
-            pages.append((None, item["id"]))
+            pages.append((None, item))
     return book, pages
 
 
-def load_pages(bs, page_refs):
-    out = []
-    for chapter, pid in page_refs:
-        p = bs.json("GET", f"/api/pages/{pid}")
-        atts = bs.json("GET", "/api/attachments", params={"filter[uploaded_to]": pid, "count": 100})["data"]
+def load_pages(bs, page_refs, cache):
+    out, hits = [], 0
+    for chapter, item in page_refs:
+        pid = item["id"]
+        stamp = item.get("updated_at")
+        cached = cache.page(pid, stamp)
+        if cached is None:
+            p = bs.json("GET", f"/api/pages/{pid}")
+            atts = bs.json("GET", "/api/attachments", params={"filter[uploaded_to]": pid, "count": 100})["data"]
+            cached = {"bs_id": p["id"], "name": p["name"], "slug": p["slug"], "html": p.get("html") or "",
+                      "attachments": [a["name"] for a in atts]}
+            cache.put_page(pid, stamp, cached)
+        else:
+            hits += 1
         kind, label, _ = mapping_for(chapter)
-        out.append({
-            "bs_id": p["id"], "name": p["name"], "slug": p["slug"],
-            "chapter": chapter, "html": p.get("html") or "", "attachments": [a["name"] for a in atts],
-            "kind": kind, "label": label,
-        })
+        out.append({**{k: cached[k] for k in ("bs_id", "name", "slug", "html", "attachments")},
+                    "chapter": chapter, "kind": kind, "label": label})
+    print(f"BookStack pages: {len(out) - hits} downloaded, {hits} from the local cache")
     return out
 
 
@@ -263,7 +328,7 @@ def rewrite_links(pages, by_slug, by_id, report):
         p["entry"] = LINK_RE.sub(make(p), p["html"])
 
 
-def upload_images(bs, kanka, cid, page, report):
+def upload_images(bs, kanka, cid, page, report, cache):
     """Kanka's gallery API writes to an S3 disk we don't run; the entity-image endpoint uses the local disk instead."""
     ent = page["kanka"]
     urls = {}
@@ -273,7 +338,7 @@ def upload_images(bs, kanka, cid, page, report):
         if path is None or not path.startswith("/uploads/") or src in urls:
             continue
         try:
-            data = bs.call("GET", path).content
+            data = cache.image(path, lambda: bs.call("GET", path).content)
             name = os.path.basename(path)
             r = kanka.json("POST", f"/api/1.0/campaigns/{cid}/entities/{ent['entity_id']}/image",
                            files={"file": (name, data)})
@@ -296,6 +361,8 @@ def main():
     ap.add_argument("--book", default="Kaidoho")
     ap.add_argument("--campaign", type=int, help="Kanka campaign id (must be empty)")
     ap.add_argument("--dry-run", action="store_true", help="read BookStack and print the mapping; write nothing")
+    ap.add_argument("--cache-dir", default=".kaidoho-cache", help="local copy of what was read from BookStack")
+    ap.add_argument("--refresh", action="store_true", help="discard the local BookStack cache and download everything again")
     ap.add_argument("--report", default="kaidoho-migration-report.md")
     args = ap.parse_args()
 
@@ -309,7 +376,8 @@ def main():
     bs = Api(BOOKSTACK_ORIGIN, {"Authorization": f"Token {ask('BookStack token id')}:{ask('BookStack token secret')}"})
 
     book, refs = fetch_book(bs, args.book)
-    pages = load_pages(bs, refs)
+    cache = Cache(args.cache_dir, args.refresh)
+    pages = load_pages(bs, refs, cache)
     report = []
     skipped = [p for p in pages if p["kind"] == SKIP]
     pages = [p for p in pages if p["kind"] != SKIP]
@@ -351,7 +419,7 @@ def main():
     rewrite_links(pages, by_slug, by_id, report)
     n_images = 0
     for p in pages:
-        n_images += upload_images(bs, kanka, cid, p, report)
+        n_images += upload_images(bs, kanka, cid, p, report, cache)
         r = kanka.json("PUT", f"/api/1.0/campaigns/{cid}/{KANKA_ENDPOINT[p['kind']]}/{p['kanka']['id']}",
                        json={"name": p["name"], "entry": p["entry"], "type": p["label"]})["data"]
         before, after = counts(p["html"]), counts(r.get("entry") or "")
