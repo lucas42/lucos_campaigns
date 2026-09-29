@@ -2,6 +2,8 @@ import http.server
 import os
 import pty
 import select
+import shutil
+import tempfile
 import threading
 import time
 import unittest
@@ -14,6 +16,7 @@ class Gate(http.server.BaseHTTPRequestHandler):
     """Stand-in for the aithne gate + Kanka: 302 unless the session cookie is right, then JSON."""
     log = []
     status = 502
+    fails = 0
     mode = "gate"  # "gate": redirect without a good cookie; "html": 200 HTML without one; "open": never gate
 
     def _serve(self):
@@ -21,6 +24,10 @@ class Gate(http.server.BaseHTTPRequestHandler):
         if self.path.startswith("/leak"):
             return self._send(200, b"leaked", "text/plain")
         good = "_oauth2_proxy=good" in (self.headers.get("Cookie") or "")
+        if self.mode == "flaky":
+            Gate.fails -= 1
+            if Gate.fails >= 0:
+                return self._send(503, b"<html>restarting</html>", "text/html")
         if self.mode == "bad-gateway":
             return self._send(self.status, b"<html>error</html>", "text/html")
         if self.path == "/api/1.0/bad-token":
@@ -115,6 +122,23 @@ class GateTest(unittest.TestCase):
         with mock.patch.object(m, "ask", side_effect=["kanka_session=x", "_oauth2_proxy=good"]):
             self.assertEqual(k.json("GET", "/api/1.0/x"), {"data": {"id": 1}})
 
+    def test_reads_are_retried_through_a_restart_but_writes_are_not(self):
+        Gate.mode, Gate.fails = "flaky", 2
+        with mock.patch.object(m, "RETRY_WAITS", (0, 0, 0)):
+            self.assertEqual(self.kanka().json("GET", "/api/1.0/x"), {"data": {"id": 1}})
+            self.assertEqual(len(Gate.log), 3)
+            Gate.log, Gate.fails = [], 2
+            with self.assertRaisesRegex(RuntimeError, "503"):
+                self.kanka().json("POST", "/api/1.0/x")
+            self.assertEqual(len(Gate.log), 1, "a write must not be resent")
+
+    def test_read_gives_up_when_the_server_stays_down(self):
+        Gate.mode, Gate.fails = "flaky", 99
+        with mock.patch.object(m, "RETRY_WAITS", (0, 0)):
+            with self.assertRaisesRegex(RuntimeError, "503"):
+                self.kanka().json("GET", "/api/1.0/x")
+        self.assertEqual(len(Gate.log), 3)
+
     def test_non_kanka_redirect_is_an_error(self):
         with self.assertRaisesRegex(RuntimeError, "unexpected redirect"):
             m.Api(self.base, {}).json("GET", "/api/1.0/x")
@@ -126,6 +150,63 @@ class GateTest(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 m.preflight("tok")
         self.assertTrue(all(e[2] is None for e in Gate.log), "the preflight must send no cookie")
+
+
+class CacheTest(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.dir, True)
+        self.root = os.path.join(self.dir, "c")
+
+    def test_page_is_reused_only_while_updated_at_matches(self):
+        c = m.Cache(self.root)
+        c.put_page(7, "2026-09-01T10:00:00Z", {"name": "P", "html": "<p>x</p>"})
+        self.assertEqual(c.page(7, "2026-09-01T10:00:00Z")["name"], "P")
+        self.assertIsNone(c.page(7, "2026-09-02T10:00:00Z"))
+        self.assertIsNone(c.page(7, None), "no timestamp from BookStack means no reuse")
+        self.assertIsNone(c.page(8, "2026-09-01T10:00:00Z"))
+
+    def test_image_is_fetched_once(self):
+        c, calls = m.Cache(self.root), []
+        fetch = lambda: calls.append(1) or b"png"  # noqa: E731
+        self.assertEqual(c.image("/uploads/a.png", fetch), b"png")
+        self.assertEqual(m.Cache(self.root).image("/uploads/a.png", fetch), b"png")
+        self.assertEqual(len(calls), 1)
+
+    def test_refresh_discards_the_cache_and_files_are_private(self):
+        c = m.Cache(self.root)
+        c.put_page(1, "s", {"name": "P"})
+        c.image("/uploads/a.png", lambda: b"x")
+        for path, mode in ((self.root, 0o700), (os.path.join(self.root, "pages", "1.json"), 0o600)):
+            self.assertEqual(os.stat(path).st_mode & 0o777, mode)
+        self.assertIsNone(m.Cache(self.root, refresh=True).page(1, "s"))
+        self.assertEqual(os.listdir(os.path.join(self.root, "images")), [])
+
+    def test_refresh_leaves_unrelated_files_in_the_cache_dir_alone(self):
+        c = m.Cache(self.root)
+        c.put_page(1, "s", {"name": "P"})
+        keep = os.path.join(self.root, "notes.txt")
+        open(keep, "w").write("mine")
+        m.Cache(self.root, refresh=True)
+        self.assertTrue(os.path.exists(keep))
+        self.assertIsNone(m.Cache(self.root).page(1, "s"))
+
+    def test_load_pages_uses_the_cache(self):
+        class BS:
+            calls = 0
+            def json(self, method, path, **kw):
+                BS.calls += 1
+                if path.startswith("/api/pages/"):
+                    return {"id": 1, "name": "N", "slug": "n", "html": "<p>x</p>"}
+                return {"data": [{"name": "att.txt"}]}
+        c = m.Cache(self.root)
+        refs = [("People", {"id": 1, "updated_at": "t1"})]
+        first = m.load_pages(BS(), refs, c)
+        self.assertEqual(BS.calls, 2)
+        self.assertEqual(m.load_pages(BS(), refs, c), first)
+        self.assertEqual(BS.calls, 2, "the second run must not call BookStack")
+        m.load_pages(BS(), [("People", {"id": 1, "updated_at": "t2"})], c)
+        self.assertEqual(BS.calls, 4, "a changed page is downloaded again")
 
 
 class PromptTest(unittest.TestCase):

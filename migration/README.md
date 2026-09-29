@@ -40,6 +40,19 @@ Or with Docker: `docker build -t kaidoho-migration . && docker run -it --rm -v "
 
 The dry run prints the chapter → type mapping and N, and writes nothing. Kanka's API allows 30 requests a minute, about 2 calls per page plus about 2 per image, so expect roughly N/15 minutes. **Gate sessions last 15 minutes** (aithne issues no refresh token), so the script will stop and ask for a fresh cookie about that often: refresh campaigns.l42.eu in your browser, copy the Cookie header again, paste it.
 
+## Local cache of BookStack
+
+Everything read from BookStack (each page's content and attachment list, and each inline image) is cached in `.kaidoho-cache/` in the working directory, so a re-run doesn't download it all again. A cached page is reused only while BookStack still reports the same `updated_at` for it; an image is cached by its upload path, which names one immutable file. So edits made in BookStack between runs are picked up by themselves, except a change to a page's attachments alone, or to a page that another page includes (BookStack includes), neither of which bumps the including page's `updated_at`. Use `--refresh` if you've edited such pages.
+
+- **Force a full re-download:** `--refresh` (it removes only the cache's own `pages/` and `images/` folders), or delete `.kaidoho-cache/`. `--cache-dir` moves it.
+- **What's in it:** BookStack content only (private, so the directory and files are owner-only). It never holds a token or the gate cookie. Delete it when you're done: `rm -r .kaidoho-cache`.
+- **With Docker** the working directory is `/out`, so the cache lands in the directory you mounted there.
+- The run prints how many pages came from the cache. Kanka is never cached: it is always read and written live.
+
+## Server restarts
+
+Every merge to this repo redeploys the app, and the app is unreachable for a minute or two while it restarts. Reads from BookStack and Kanka (GETs) are retried with backoff for about three minutes when that happens. A write that hits a restart is not retried, because it may already have been applied: the run stops with an error and the recovery below applies. Avoid merging to this repo during a run.
+
 ## If a run fails part-way
 
 Delete the campaign's entities (or create a new empty campaign) and run again. There is no resume mode.

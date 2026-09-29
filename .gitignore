@@ -1,3 +1,4 @@
 .env
 __pycache__/
 kaidoho-migration-report.md
+.kaidoho-cache/
