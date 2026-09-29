@@ -3,7 +3,7 @@
 ARG KANKA_VERSION=3.15
 ARG KANKA_COMMIT=79d951798fead551dfbd60d293a6c4695c31c42d
 
-FROM alpine:3.23@sha256:85fe1e81d6758c208f3e1eed4338a1997e19d4be002d4dd32d3100c9a8c010a0 AS source
+FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 AS source
 ARG KANKA_VERSION
 ARG KANKA_COMMIT
 RUN apk add --no-cache git
@@ -13,7 +13,7 @@ RUN git clone --quiet --depth 1 --branch "$KANKA_VERSION" https://github.com/owl
 
 FROM composer:2@sha256:9715c7f69044da2a212a5fbde29ee7da24e364d426560ae6367b060236f847d7 AS composer
 
-FROM serversideup/php:8.4-fpm-nginx-v4.5.1@sha256:8e0864511c48a943b59c59c2845eb8de1dc402b6d549a3b2e0e45018f1b99567 AS vendor
+FROM serversideup/php:8.5-fpm-nginx-v4.5.1@sha256:531f20f5e74eb834de878ea8b5bcb6fd43923828b20e96783e97445273a705a5 AS vendor
 USER root
 RUN install-php-extensions gd intl bcmath exif
 COPY --from=composer /usr/bin/composer /usr/bin/composer
@@ -29,7 +29,7 @@ COPY --from=source /kanka/ ./
 RUN yarn audit || true
 RUN yarn install --frozen-lockfile && yarn build
 
-FROM serversideup/php:8.4-fpm-nginx-v4.5.1@sha256:8e0864511c48a943b59c59c2845eb8de1dc402b6d549a3b2e0e45018f1b99567
+FROM serversideup/php:8.5-fpm-nginx-v4.5.1@sha256:531f20f5e74eb834de878ea8b5bcb6fd43923828b20e96783e97445273a705a5
 ARG VERSION
 ENV VERSION=$VERSION
 USER root
