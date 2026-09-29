@@ -1,5 +1,6 @@
 name: Kanka upstream watch
 
+# Run it by hand: Actions > Kanka upstream watch > Run workflow (workflow_dispatch).
 # Notices new owlchester/kanka releases (proposing only the NEXT one) and upstream security findings.
 # Everything it produces is an ordinary issue in this repo. It never opens a PR, because on this unsupervised repo an
 # approved PR deploys and runs Kanka's migrations before anyone has taken the pre-upgrade backup.
