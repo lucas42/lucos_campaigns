@@ -14,14 +14,30 @@ from urllib.parse import unquote, urlparse
 
 import requests
 
-# Chapter-name -> Kanka type. Matched case-insensitively on the chapter name with a trailing "s" ignored.
-# Loose pages and any chapter not listed become Notes (and are reported), never dropped.
+# BookStack chapter -> (Kanka type, label for Kanka's free-text `type` field; None keeps the chapter name).
+# Matched case-insensitively on the exact chapter name. SKIP chapters are not migrated (and are reported).
+# Loose pages and any chapter not listed become Notes labelled with the chapter name (and are reported).
+SKIP = "skip"
 CHAPTER_TYPES = {
-    "pc": "character",
-    "npc": "character",
-    "place": "location",
+    "Player Characters": ("character", None),
+    "People": ("character", None),
+    "Religon": ("character", "Religion"),  # source spelling; most entries are gods
+    "Monsters": ("creature", None),
+    "Organisations": ("organisation", None),
+    "Military": ("organisation", None),
+    "Regions": ("location", None),
+    "Settlements": ("location", None),
+    "Neighbourhoods": ("location", None),
+    "Buildings": ("location", None),
+    "Natural Geography": ("location", None),
+    "Infrastructure": ("location", None),
+    "Session Notes": ("journal", None),
+    "History": ("note", None),
+    "Culture": ("note", None),
+    "Templates": (SKIP, None),
 }
-KANKA_ENDPOINT = {"character": "characters", "location": "locations", "note": "notes"}
+KANKA_ENDPOINT = {"character": "characters", "location": "locations", "note": "notes", "creature": "creatures",
+                  "organisation": "organisations", "journal": "journals"}
 PRESERVED_TAGS = ("details", "summary", "table")
 
 
@@ -53,11 +69,14 @@ class Api:
         return self.call(method, path, **kw).json()
 
 
-def entity_type_for(chapter_name):
+def mapping_for(chapter_name):
+    """(kanka type or SKIP, type label, is_listed). Loose pages are Notes; unlisted chapters are Notes labelled with the chapter."""
     if chapter_name is None:
-        return "note"
-    key = chapter_name.strip().lower()
-    return CHAPTER_TYPES.get(key) or CHAPTER_TYPES.get(key.rstrip("s")) or "note"
+        return "note", None, True
+    listed = {k.lower(): v for k, v in CHAPTER_TYPES.items()}.get(chapter_name.strip().lower())
+    if listed is None:
+        return "note", chapter_name, False
+    return listed[0], listed[1] or chapter_name, True
 
 
 def fetch_book(bs, book_name):
@@ -83,7 +102,7 @@ def load_pages(bs, page_refs):
         out.append({
             "bs_id": p["id"], "name": p["name"], "slug": p["slug"],
             "chapter": chapter, "html": p.get("html") or "", "attachments": [a["name"] for a in atts],
-            "kind": entity_type_for(chapter), "private": False,
+            "kind": mapping_for(chapter)[0], "label": mapping_for(chapter)[1],
         })
     return out
 
@@ -181,16 +200,22 @@ def main():
     book, refs = fetch_book(bs, args.book)
     pages = load_pages(bs, refs)
     report = []
+    skipped = [p for p in pages if p["kind"] == SKIP]
+    pages = [p for p in pages if p["kind"] != SKIP]
 
-    print(f"Book {book['name']!r}: {len(pages)} pages")
+    print(f"Book {book['name']!r}: {len(pages)} pages to migrate, {len(skipped)} skipped")
     chapters = {}
     for p in pages:
         chapters.setdefault(p["chapter"], []).append(p)
     for chapter, ps in chapters.items():
         label = chapter if chapter is not None else "(no chapter)"
-        print(f"  {label:30} -> {ps[0]['kind']:9} {len(ps)} pages")
-        if chapter is not None and ps[0]["kind"] == "note":
-            report.append(f"Chapter {chapter!r} is not PC/NPC/Place, so its {len(ps)} pages became Notes.")
+        print(f"  {label:30} -> {ps[0]['kind']:12} type={ps[0]['label']!s:18} {len(ps)} pages")
+        if chapter is not None and not mapping_for(chapter)[2]:
+            report.append(f"Chapter {chapter!r} is not in the mapping, so its {len(ps)} pages became Notes.")
+    for chapter in sorted({p["chapter"] for p in skipped}):
+        n = sum(1 for p in skipped if p["chapter"] == chapter)
+        report.append(f"Chapter {chapter!r} is skipped by design: {n} pages were not migrated.")
+        print(f"  {chapter:30} -> SKIPPED ({n} pages)")
     if args.dry_run:
         for line in report:
             print("NOTE:", line)
@@ -206,7 +231,7 @@ def main():
 
     # Pass 1: create every entity, so pass 2 can resolve links between them.
     for p in pages:
-        r = kanka.json("POST", f"/api/1.0/campaigns/{cid}/{KANKA_ENDPOINT[p['kind']]}", json={"name": p["name"], "entry": ""})["data"]
+        r = kanka.json("POST", f"/api/1.0/campaigns/{cid}/{KANKA_ENDPOINT[p['kind']]}", json={"name": p["name"], "entry": "", "type": p["label"]})["data"]
         p["kanka"] = {"id": r["id"], "entity_id": r["entity_id"], "type": p["kind"]}
         print(f"created {p['kind']} {p['name']!r}")
     by_slug = {p["slug"]: p for p in pages}
@@ -218,7 +243,7 @@ def main():
     for p in pages:
         n_images += upload_images(bs, kanka, cid, p, report)
         r = kanka.json("PUT", f"/api/1.0/campaigns/{cid}/{KANKA_ENDPOINT[p['kind']]}/{p['kanka']['id']}",
-                       json={"name": p["name"], "entry": p["entry"]})["data"]
+                       json={"name": p["name"], "entry": p["entry"], "type": p["label"]})["data"]
         before, after = counts(p["html"]), counts(r.get("entry") or "")
         lost = {t: (before[t], after[t]) for t in PRESERVED_TAGS if after[t] < before[t]}
         if lost:
