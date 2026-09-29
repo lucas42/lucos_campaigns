@@ -1,0 +1,133 @@
+# Own default network only: nothing here may join a shared estate network (ADR-0001, decision 6).
+services:
+  lucos_campaigns_app:
+    container_name: lucos_campaigns_app
+    build: .
+    image: lucas42/lucos_campaigns_app:${VERSION:-latest}
+    ports:
+      - "${PORT}:8080"
+    environment:
+      - APP_NAME=Campaigns
+      - APP_ENV=production
+      - APP_DEBUG=false
+      - APP_KEY
+      - APP_URL=${APP_ORIGIN}
+      - APP_EMAIL=noreply@l42.eu
+      - APP_REGISTRATION_ENABLED=${APP_REGISTRATION_ENABLED:-false}
+      - DB_CONNECTION=mysql
+      - DB_HOST=lucos_campaigns_db
+      - DB_PORT=3306
+      - DB_DATABASE=kanka
+      - DB_USERNAME=kanka
+      - DB_PASSWORD
+      - QUEUE_DRIVER=sync
+      - CACHE_DRIVER=file
+      - SESSION_DRIVER=database
+      - SESSION_SECURE_COOKIE=true
+      - BROADCAST_DRIVER=null
+      - MAIL_MAILER=log
+      - MAIL_FROM_ADDRESS=noreply@l42.eu
+      - FILESYSTEM_DRIVER=public
+      - LOG_CHANNEL=daily
+      - THUMBOR_KEY=
+      - SCOUT_DRIVER=meilisearch
+      - MEILISEARCH_HOST=http://lucos_campaigns_search:7700
+      - MEILISEARCH_KEY=${MEILI_MASTER_KEY}
+      - AUTORUN_ENABLED=true
+      - AUTORUN_LARAVEL_MIGRATION_TIMEOUT=90
+      - SSL_MODE=off
+      - PHP_DISPLAY_ERRORS=Off
+      - PHP_FPM_PM_MAX_CHILDREN=5
+    volumes:
+      - storage:/var/www/html/storage
+    mem_limit: 768m
+    memswap_limit: 768m
+    depends_on:
+      lucos_campaigns_db:
+        condition: service_healthy
+      lucos_campaigns_search:
+        condition: service_healthy
+      lucos_campaigns_auth:
+        condition: service_started
+    restart: always
+    healthcheck:
+      # Static file through nginx: the image's own /healthcheck path doesn't exist in the gated server block.
+      test: ["CMD-SHELL", "curl -fsS -o /dev/null http://127.0.0.1:8080/favicon.ico"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 180s
+
+  lucos_campaigns_db:
+    container_name: lucos_campaigns_db
+    image: mariadb:11.4.12
+    environment:
+      - MARIADB_DATABASE=kanka
+      - MARIADB_USER=kanka
+      - MARIADB_PASSWORD=${DB_PASSWORD}
+      - MARIADB_ROOT_PASSWORD=${DB_ROOT_PASSWORD}
+    volumes:
+      - db_data:/var/lib/mysql
+    mem_limit: 512m
+    memswap_limit: 512m
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "healthcheck.sh --connect --innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+
+  lucos_campaigns_search:
+    container_name: lucos_campaigns_search
+    image: getmeili/meilisearch:v1.54.1@sha256:6f6c72d43008f227a7329422aa723ab5b4929e1fad8e68743062b050c36fb7ad
+    environment:
+      - MEILI_ENV=production
+      - MEILI_MASTER_KEY=${MEILI_MASTER_KEY}
+      - MEILI_NO_ANALYTICS=true
+      - MEILI_MAX_INDEXING_MEMORY=256MiB
+    volumes:
+      - search_data:/meili_data
+    mem_limit: 512m
+    memswap_limit: 512m
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:7700/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+  # aithne gate: nginx in the app container sends every request here via auth_request.
+  # Config follows lucos_locations' oauth2-proxy (see its comments for why each ES256/scope line is needed).
+  lucos_campaigns_auth:
+    container_name: lucos_campaigns_auth
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.15.3
+    environment:
+      - OAUTH2_PROXY_HTTP_ADDRESS=0.0.0.0:4180
+      - OAUTH2_PROXY_PROVIDER=oidc
+      - OAUTH2_PROXY_CLIENT_ID=lucos_campaigns
+      - OAUTH2_PROXY_CLIENT_SECRET=${KEY_LUCOS_AITHNE}
+      - OAUTH2_PROXY_COOKIE_SECRET=${OAUTH2_PROXY_COOKIE_SECRET}
+      - OAUTH2_PROXY_COOKIE_SECURE=${OAUTH2_PROXY_COOKIE_SECURE:-true}
+      - OAUTH2_PROXY_COOKIE_SAMESITE=lax
+      - OAUTH2_PROXY_REDIRECT_URL=${APP_ORIGIN}/oauth2/callback
+      - OAUTH2_PROXY_OIDC_ISSUER_URL=${AITHNE_ORIGIN}
+      - OAUTH2_PROXY_SKIP_OIDC_DISCOVERY=true
+      - OAUTH2_PROXY_LOGIN_URL=${AITHNE_ORIGIN}/oauth2/authorize
+      - OAUTH2_PROXY_REDEEM_URL=${AITHNE_TOKEN_URL:-${AITHNE_ORIGIN}/oauth2/token}
+      - OAUTH2_PROXY_OIDC_JWKS_URL=${AITHNE_JWKS_URL:-${AITHNE_ORIGIN}/.well-known/jwks.json}
+      - OAUTH2_PROXY_OIDC_ENABLED_SIGNING_ALGS=ES256
+      - OAUTH2_PROXY_OIDC_GROUPS_CLAIM=scopes
+      - OAUTH2_PROXY_ALLOWED_GROUPS=campaigns:use
+      - OAUTH2_PROXY_SCOPE=openid email profile campaigns:use
+      - OAUTH2_PROXY_EMAIL_DOMAINS=*
+      - OAUTH2_PROXY_UPSTREAMS=static://202
+      - OAUTH2_PROXY_SET_XAUTHREQUEST=true
+      - OAUTH2_PROXY_SILENCE_PING_LOGGING=true
+    restart: always
+
+volumes:
+  storage:
+  db_data:
+  search_data:
