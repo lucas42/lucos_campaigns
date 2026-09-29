@@ -1,0 +1,138 @@
+name: Kanka upstream watch
+
+# Notices new owlchester/kanka releases (proposing only the NEXT one) and upstream security findings.
+# Everything it produces is an ordinary issue in this repo. It never opens a PR, because on this unsupervised repo an
+# approved PR deploys and runs Kanka's migrations before anyone has taken the pre-upgrade backup.
+on:
+  schedule:
+    - cron: '23 5 * * *'
+  push:
+    branches: [main]
+    paths: [Dockerfile]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: kanka-upstream-watch
+  cancel-in-progress: false
+
+# Explicit bash runs with -eo pipefail, so `script | tee` can't hide a failure.
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  next-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: pin
+        run: .github/scripts/kanka-pin.sh Dockerfile | tee -a "$GITHUB_OUTPUT"
+      - id: next
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.pin.outputs.version }}
+        run: |
+          set -euo pipefail
+          gh api --paginate --slurp repos/owlchester/kanka/releases | jq 'add' > releases.json
+          .github/scripts/kanka-next-release.sh "$VERSION" < releases.json | tee -a "$GITHUB_OUTPUT"
+      - name: Open the upgrade issue for the next release
+        if: steps.next.outputs.next != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.pin.outputs.version }}
+          NEXT: ${{ steps.next.outputs.next }}
+          BEHIND: ${{ steps.next.outputs.behind }}
+        run: |
+          set -euo pipefail
+          commit=$(gh api "repos/owlchester/kanka/commits/$NEXT" --jq .sha)
+          published=$(jq -r --arg t "$NEXT" '[.[] | select(.tag_name == $t)] | first | .published_at[0:10]' releases.json)
+          .github/scripts/kanka-watch-issues.sh upgrade "$VERSION" "$NEXT" "$commit" "$BEHIND" "$published" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Summary
+        if: always()
+        env:
+          VERSION: ${{ steps.pin.outputs.version }}
+          NEXT: ${{ steps.next.outputs.next }}
+          BEHIND: ${{ steps.next.outputs.behind }}
+        run: |
+          {
+            echo "### Kanka release watch"
+            echo "- Current pin: ${VERSION:-unknown}"
+            echo "- Next release: ${NEXT:-none} (${BEHIND:-?} release(s) behind)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  upstream-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: pin
+        run: .github/scripts/kanka-pin.sh Dockerfile | tee -a "$GITHUB_OUTPUT"
+      - name: Check out upstream Kanka at the pinned tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: owlchester/kanka
+          ref: ${{ steps.pin.outputs.version }}
+          path: kanka-src
+          persist-credentials: false
+      - name: Fail unless it is the pinned commit
+        env:
+          COMMIT: ${{ steps.pin.outputs.commit }}
+        run: test "$(git -C kanka-src rev-parse HEAD)" = "$COMMIT"
+      # Audits only read the lockfiles: never install, run scripts or load plugins from the upstream checkout.
+      - name: Audit the shipped PHP and JS dependencies
+        run: |
+          set -euo pipefail
+          composer --version && yarn --version
+          composer audit --working-dir=kanka-src --no-plugins --no-scripts --locked --no-dev --abandoned=ignore --format=json > composer-audit.json || true
+          yarn --no-default-rc --cwd kanka-src audit --groups dependencies --json > yarn-audit.ndjson || true
+      - name: Read Kanka's own published security advisories
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api repos/owlchester/kanka/security-advisories > advisories.json
+      - name: Filter through the accepted list
+        run: .github/scripts/kanka-audit-findings.sh composer-audit.json yarn-audit.ndjson advisories.json .github/upstream-audit-accepted.txt audit-out
+      - name: Create, update or close the findings issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.pin.outputs.version }}
+        run: .github/scripts/kanka-watch-issues.sh findings audit-out/findings.json "$VERSION" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Summary
+        if: always()
+        env:
+          VERSION: ${{ steps.pin.outputs.version }}
+        run: |
+          {
+            echo "### Upstream audit of Kanka ${VERSION:-?}"
+            if [ -f audit-out/findings.json ]; then
+              echo "- Findings before filtering: $(jq length audit-out/all.json)"
+              echo "- Unaccepted findings: $(jq length audit-out/findings.json)"
+              echo "- Stale accepted entries (safe to prune): $(grep -c . audit-out/stale.txt || true)"
+              sed 's/^/  - /' audit-out/stale.txt
+            else
+              echo "- The audit did not complete."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  watch-health:
+    needs: [next-release, upstream-audit]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Open, update or close the "watch is failing" issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESULTS: ${{ needs.next-release.result }} ${{ needs.upstream-audit.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ "$RESULTS" = "success success" ]; then state=ok; else state=failed; fi
+          .github/scripts/kanka-watch-issues.sh health "$state" "$RUN_URL" | tee -a "$GITHUB_STEP_SUMMARY"
