@@ -27,7 +27,7 @@ Production values can only be set by lucas42 and must exist **before the first p
 
 Mail is logged (`MAIL_MAILER=log`), so emailed reset links land in `storage/logs` (daily, 7 days). Reset a password with `docker exec lucos_campaigns_app php artisan users:reset-password <user> [password]` instead of the emailed flow.
 
-First start also seeds Kanka, creates the Passport keys and client, and builds the search index (`docker/60-kanka-first-run.sh`); it does nothing on later starts.
+Each start also runs `docker/60-kanka-first-run.sh`: it seeds Kanka, creates the Passport keys and client, and builds the search index, skipping each step once its own result exists, so a failure part-way is retried on the next start. To force a search rebuild, run `docker exec lucos_campaigns_app php artisan setup:meilisearch`.
 
 ## Upgrading Kanka
 
