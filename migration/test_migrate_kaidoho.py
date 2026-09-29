@@ -1,5 +1,8 @@
 import http.server
+import os
+import pty
 import threading
+import time
 import unittest
 from unittest import mock
 
@@ -122,6 +125,35 @@ class GateTest(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 m.preflight("tok")
         self.assertTrue(all(e[2] is None for e in Gate.log), "the preflight must send no cookie")
+
+
+class PromptTest(unittest.TestCase):
+    def test_hidden_prompt_accepts_a_line_longer_than_the_canonical_limit(self):
+        master, slave = pty.openpty()
+        self.addCleanup(os.close, master)
+        self.addCleanup(os.close, slave)
+        secret = "_oauth2_proxy_0=" + "A" * 9000 + "; _oauth2_proxy_1=" + "B" * 3000
+        out = bytearray()
+
+        def type_it():
+            time.sleep(0.3)
+            os.write(master, (secret + "\n").encode())
+            deadline = time.time() + 2
+            while time.time() < deadline:  # what the terminal would display
+                try:
+                    out.extend(os.read(master, 65536))
+                except OSError:
+                    break
+                if b"\n" in out:
+                    break
+
+        t = threading.Thread(target=type_it)
+        t.start()
+        with mock.patch.object(m, "TTY_PATH", os.ttyname(slave)):
+            got = m.ask("Gate cookie")
+        t.join()
+        self.assertEqual(got, secret)
+        self.assertNotIn(b"AAAA", bytes(out), "the pasted value must not be echoed")
 
 
 if __name__ == "__main__":

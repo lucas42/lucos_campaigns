@@ -14,7 +14,7 @@ One-shot, re-runnable copy of the Kaidoho book from `lucos_worlds` into an **emp
 
 - **BookStack:** an API token belonging to a dedicated read-only BookStack user.
 - **Kanka:** every request carries your **aithne gate session cookie** (copied from your browser) **and** your Kanka personal access token in `Authorization: Bearer`. The gate decides on the cookie alone and ignores the header, so the two don't conflict. Before doing anything else, a real run checks this: it sends the token with **no** cookie and aborts unless the gate redirects.
-- Everything is typed at a hidden prompt (`getpass`): never an argument, environment variable or file, and never printed. Only the `_oauth2_proxy`/`_oauth2_proxy_0`/`_oauth2_proxy_1` cookies are kept from what you paste; the rest of the Cookie header is discarded.
+- Everything is typed at a hidden prompt (it reads the terminal directly, so a Cookie header longer than a terminal's usual line limit still pastes): never an argument, environment variable or file, and never printed. Only the `_oauth2_proxy`/`_oauth2_proxy_0`/`_oauth2_proxy_1` cookies are kept from what you paste; the rest of the Cookie header is discarded.
 - Redirects are never followed. A redirect (the gate always answers a refused request with one) means the gate turned the request away, and the script asks for a fresh cookie and retries the same call (safe even for writes: the gate rejects before Kanka sees the request). Any other non-JSON response, such as a 5xx from behind the gate, is an error and is never retried, since the request may have reached Kanka.
 - The Kanka and BookStack hosts are fixed in the script; there is no URL flag.
 
