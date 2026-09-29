@@ -59,3 +59,15 @@ updates:
         update-types: [minor, patch]
       major:
         update-types: [major]
+
+  - package-ecosystem: "pip"
+    directory: "/migration"
+    schedule:
+      interval: "weekly"
+    allow:
+      - dependency-type: all
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+      major:
+        update-types: [major]

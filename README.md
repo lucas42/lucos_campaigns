@@ -51,7 +51,7 @@ Each start also runs `docker/60-kanka-first-run.sh`: it seeds Kanka, creates the
 
 ## Migrating Kaidoho
 
-One-off, run on avalon by hand: see [`migration/README.md`](migration/README.md). It uses `docker-compose.migration.yml`, which is never part of the deploy.
+One-off, run on lucas42's own machine through the normal gate; nothing is added to avalon: see [`migration/README.md`](migration/README.md).
 
 ## Icons
 

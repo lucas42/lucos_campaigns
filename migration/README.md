@@ -1,65 +1,55 @@
 # Kaidoho migration (BookStack → Kanka)
 
-One-shot, re-runnable copy of the Kaidoho book from `lucos_worlds` into an **empty** Kanka campaign. Design: [ADR-0001](../docs/adr/0001-adopt-self-hosted-kanka.md), decision 6. `lucos_worlds` is only read, never modified.
+One-shot, re-runnable copy of the Kaidoho book from `lucos_worlds` into an **empty** Kanka campaign. It runs **on lucas42's own machine** against both systems' public HTTPS origins (`https://worlds.l42.eu`, `https://campaigns.l42.eu`). **Nothing is added to or changed on avalon.** `lucos_worlds` is only read, never modified. Design: the approved proposal on lucas42/lucos_campaigns#3 (it replaces the on-avalon mechanism in ADR-0001 decision 6).
 
 ## What it does
 
-- Chapter → Kanka type, per `CHAPTER_TYPES` in `migrate_kaidoho.py` (agreed on lucos_campaigns#3): People/Player Characters/Religon → Characters, Monsters → Creatures, Organisations/Military → Organisations, the place chapters → Locations, Session Notes → Journals, History/Culture → Notes. Templates is skipped. Each entity's Kanka `type` label is its chapter name (Religon is relabelled Religion). Loose pages and any unlisted chapter become Notes and are reported. `--dry-run` prints the mapping without writing.
-- Page HTML becomes the entity entry. Internal links (`/books/<book>/page/<slug>` and `/link/<id>`) become Kanka mentions; links to chapters/books or missing pages stay as plain links and are reported.
+- Chapter → Kanka type, per `CHAPTER_TYPES` in `migrate_kaidoho.py` (agreed on lucas42/lucos_campaigns#3): People/Player Characters/Religon → Characters, Monsters → Creatures, Organisations/Military → Organisations, the place chapters → Locations, Session Notes → Journals, History/Culture → Notes. Templates is skipped. Each entity's Kanka `type` label is its chapter name (Religon is relabelled Religion). Loose pages and any unlisted chapter become Notes and are reported.
+- Page HTML becomes the entity entry. Internal links (`/books/<book>/page/<slug>` and `/link/<id>`) become Kanka mentions; links to chapters/books, skipped pages or missing pages stay as plain links and are reported.
 - Inline images are downloaded and re-uploaded via the entity-image endpoint (the gallery API writes to an S3 disk this stack doesn't have), so they are served from `/storage` behind the gate.
-- After each save the script compares `<details>`/`<summary>`/`<table>` counts in the source and in what Kanka stored, and reports any loss (ADR-0005 stat blocks). Attachments can't be created through Kanka's API and are reported. Both end up in `kaidoho-migration-report.md`, for lucas42.
-- Refuses to run against a campaign that already has entities: delete the campaign's entities (or make a new campaign) and re-run.
+- After each save the script compares `<details>`/`<summary>`/`<table>` counts in the source and in what Kanka stored, and reports any loss (ADR-0005 stat blocks). Attachments can't be created through Kanka's API and are reported. Both end up in `kaidoho-migration-report.md` in the working directory.
+- Refuses to run against a campaign that already has entities.
 
-## Who runs it
+## How it authenticates
 
-**lucas42, over his own SSH session on avalon (as `lucas`).** He holds the production credentials, and the tokens are production data. Everything below, including the secret files in his `$HOME`, is for that account: `/home/lucas` is mode 0700, so no other account can read them.
+- **BookStack:** an API token belonging to a dedicated read-only BookStack user.
+- **Kanka:** every request carries your **aithne gate session cookie** (copied from your browser) **and** your Kanka personal access token in `Authorization: Bearer`. The gate decides on the cookie alone and ignores the header, so the two don't conflict. Before doing anything else, a real run checks this: it sends the token with **no** cookie and aborts unless the gate redirects.
+- Everything is typed at a hidden prompt (`getpass`): never an argument, environment variable or file, and never printed. Only the `_oauth2_proxy`/`_oauth2_proxy_0`/`_oauth2_proxy_1` cookies are kept from what you paste; the rest of the Cookie header is discarded.
+- Redirects are never followed. A redirect (the gate always answers a refused request with one) means the gate turned the request away, and the script asks for a fresh cookie and retries the same call (safe even for writes: the gate rejects before Kanka sees the request). Any other non-JSON response, such as a 5xx from behind the gate, is an error and is never retried, since the request may have reached Kanka.
+- The Kanka and BookStack hosts are fixed in the script; there is no URL flag.
 
-Agents reach avalon as `lucos-agent`, which cannot read `/home/lucas` (checked: it is `drwx------ lucas lucas`), has no sudo, and has no access to the production env vars this needs. If an agent is to run it instead, lucas42 must place the three files himself (this needs root) in `/home/lucos-agent/.campaigns-migration-secrets`, owned by `lucos-agent`, directory `0700` and files `0600`, and hand over the production environment variables some other way; set `MIGRATION_SECRETS_DIR` to that path. The default is not to do this.
+## Before you run it
 
-There is no persistent checkout of this repo on avalon, so the run starts from a fresh clone (`git clone https://github.com/lucas42/lucos_campaigns.git ~/campaigns-migration && cd ~/campaigns-migration`) that is deleted at the end.
-
-## Credentials (avalon only; they are production data)
-
-- **BookStack:** create a dedicated **read-only** BookStack user (a role with only "Access system API" plus view rights), and give it an API token. Tokens inherit the user's permissions.
-- **Kanka:** lucas42's personal access token (Settings → API), and create the empty campaign in the UI first; its id is in the URL.
-
-Put each in its own file, outside the repo, without the values touching shell history or CI logs (bash, for `read -s`):
-
-```sh
-export MIGRATION_SECRETS_DIR=$HOME/.campaigns-migration-secrets
-umask 077; mkdir -p "$MIGRATION_SECRETS_DIR"
-for f in bookstack_token_id bookstack_token_secret kanka_token; do read -rsp "$f: " v; printf %s "$v" > "$MIGRATION_SECRETS_DIR/$f"; echo; done
-```
+1. In the BookStack at worlds.l42.eu: a dedicated **read-only** user (a role with only "Access System API" plus View on the Kaidoho book) with an API token. Tokens inherit the user's permissions.
+2. At campaigns.l42.eu: create the **empty** campaign (its id is in the URL, `/w/<id>/`) and a personal access token (Settings → API).
+3. Have your browser logged in to campaigns.l42.eu with devtools open, so you can copy the `Cookie` request header from any request.
 
 ## Run
 
-From that fresh clone on avalon, with the production environment variables the deploy uses exported (the compose file needs them). Fetch them without typing values into the shell: `scp -P 2202 "creds.l42.eu:lucos_campaigns/production/.env" .env && set -a && . ./.env && set +a && rm .env` (lucas42 only, as production creds):
-
-Pin the project and image to what production is running first. The deploy uses `COMPOSE_PROJECT_NAME=lucos_campaigns`, and an unset `VERSION` would resolve the app image to `:latest` and could rebuild Kanka from source, so both are set and `--no-build` is used:
+Needs Python 3.12+ (or Docker). From this directory:
 
 ```sh
-export COMPOSE_PROJECT_NAME=lucos_campaigns
-export VERSION=$(docker inspect lucos_campaigns_app --format '{{.Config.Image}}' | cut -d: -f2)
-export BOOKSTACK_URL=https://worlds.l42.eu   # or http://172.17.0.1:8040, the host port
-C="docker compose -f docker-compose.yml -f docker-compose.migration.yml"
-$C up -d --no-build --no-deps lucos_campaigns_app   # briefly restarts the production app; adds the ungated /api listener (port 8081, unpublished)
-$C run --rm lucos_campaigns_migration --dry-run
-$C run --rm lucos_campaigns_migration --campaign <id>
-cat migration-report/kaidoho-migration-report.md
+python3 -m venv /tmp/kaidoho-venv && . /tmp/kaidoho-venv/bin/activate
+pip install --require-hashes -r requirements.txt
+
+python3 migrate_kaidoho.py --dry-run             # prompts for the BookStack token only; prints the mapping and the page count N
+python3 migrate_kaidoho.py --campaign <id>       # the real run
 ```
 
-`BOOKSTACK_PUBLIC_HOSTS` (comma-separated) lists any other hostnames BookStack's own links/images use, if not the one in `BOOKSTACK_URL`.
+Or with Docker: `docker build -t kaidoho-migration . && docker run -it --rm -v "$PWD:/out" kaidoho-migration --campaign <id>` (`-it` is needed for the hidden prompts).
+
+The dry run prints the chapter → type mapping and N, and writes nothing. Kanka's API allows 30 requests a minute, about 2 calls per page plus about 2 per image, so expect roughly N/15 minutes. **Gate sessions last 15 minutes** (aithne issues no refresh token), so the script will stop and ask for a fresh cookie about that often: refresh campaigns.l42.eu in your browser, copy the Cookie header again, paste it.
+
+## If a run fails part-way
+
+Delete the campaign's entities (or create a new empty campaign) and run again. There is no resume mode.
 
 ## Afterwards
 
-1. **Revoke** the BookStack token (and delete its user) and the Kanka token. Remove `$MIGRATION_SECRETS_DIR`, `.env` and the clone (`rm -r ~/campaigns-migration`).
-2. Redeploy the app from the shipped configuration (the normal deploy, or `docker compose -f docker-compose.yml up -d --no-build --force-recreate --no-deps lucos_campaigns_app`, with the same `COMPOSE_PROJECT_NAME` and `VERSION` exported (this also briefly restarts the app)).
-3. **Verify the listener has gone:**
+1. **Revoke** the Kanka token, and revoke the BookStack token and delete its user.
+2. **Delete the secrets placed on avalon earlier**: `rm -r ~/.campaigns-migration-secrets` in lucas42's home directory there. This design doesn't use them.
+3. Read `kaidoho-migration-report.md` for anything that didn't transfer cleanly.
 
-   ```sh
-   docker exec lucos_campaigns_app ls /etc/nginx/conf.d          # only default.conf
-   docker exec lucos_campaigns_app grep -c ':1F91' /proc/net/tcp /proc/net/tcp6   # 0 and 0 (port 8081)
-   docker port lucos_campaigns_app                               # only 8080
-   ```
+## Tests
 
-Nothing here is used by the normal deploy; the override file and `nginx/migration-api.conf` are not in the image.
+`python -m unittest -v` in this directory (run in CI): the redirect-as-expiry path, the retry, the cookie filter and the preflight, against a local stand-in for the gate.
