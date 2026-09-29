@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """One-shot, re-runnable migration of a BookStack book into an empty Kanka campaign.
 
-See migration/README.md and ADR-0001 decision 6. Reads BookStack, writes Kanka, never modifies BookStack.
+Runs on lucas42's own machine over both systems' public HTTPS origins; see migration/README.md.
+Reads BookStack, writes Kanka through the aithne gate, never modifies BookStack.
 """
 import argparse
+import getpass
 import html
 import json
 import os
@@ -41,10 +43,26 @@ KANKA_ENDPOINT = {"character": "characters", "location": "locations", "note": "n
 PRESERVED_TAGS = ("details", "summary", "table")
 
 
-def secret(name):
-    path = os.path.join(os.environ.get("SECRETS_DIR", "/run/secrets"), name)
-    with open(path) as f:
-        return f.read().strip()
+# Fixed origins: the Kanka token and gate cookie must only ever go to this host, over TLS. Tests patch these.
+BOOKSTACK_ORIGIN = "https://worlds.l42.eu"
+KANKA_ORIGIN = "https://campaigns.l42.eu"
+GATE_COOKIE_RE = re.compile(r"^_oauth2_proxy(_\d+)?$")
+MAX_REPROMPTS = 3
+
+
+def ask(label):
+    return getpass.getpass(f"{label}: ").strip()
+
+
+def parse_gate_cookies(header):
+    """Keep only the oauth2-proxy session cookies (the session may be split into _0/_1) from a pasted Cookie header."""
+    header = re.sub(r"^\s*cookie:\s*", "", header, flags=re.I)
+    cookies = {}
+    for part in header.split(";"):
+        name, sep, value = part.strip().partition("=")
+        if sep and GATE_COOKIE_RE.match(name.strip()):
+            cookies[name.strip()] = value.strip()
+    return cookies
 
 
 class Api:
@@ -53,13 +71,29 @@ class Api:
         self.s = requests.Session()
         self.s.headers.update(headers)
 
+    def expired(self, r):
+        return False
+
+    def reauth(self):
+        raise RuntimeError("unexpected authentication failure")
+
     def call(self, method, path, **kw):
         url = path if path.startswith("http") else self.base + path
+        expiries = 0
         for _ in range(8):
-            r = self.s.request(method, url, timeout=120, **kw)
+            # Never follow redirects: a gate redirect must not carry credentials on to aithne.
+            r = self.s.request(method, url, timeout=120, allow_redirects=False, **kw)
+            if self.expired(r):
+                expiries += 1
+                if expiries > MAX_REPROMPTS:
+                    raise RuntimeError(f"{method} {url}: gate still refusing after {MAX_REPROMPTS} fresh cookies")
+                self.reauth()
+                continue
             if r.status_code == 429:
                 time.sleep(int(r.headers.get("Retry-After", "30")) + 1)
                 continue
+            if 300 <= r.status_code < 400:
+                raise RuntimeError(f"{method} {url} -> unexpected redirect ({r.status_code})")
             if r.status_code >= 400:
                 raise RuntimeError(f"{method} {url} -> {r.status_code}: {r.text[:500]}")
             return r
@@ -67,6 +101,43 @@ class Api:
 
     def json(self, method, path, **kw):
         return self.call(method, path, **kw).json()
+
+
+class KankaApi(Api):
+    """Kanka behind the aithne gate: a session cookie for the gate plus the Passport token for Kanka."""
+
+    def __init__(self, base, token):
+        super().__init__(base, {"Authorization": f"Bearer {token}", "Accept": "application/json"})
+
+    def expired(self, r):
+        # Kanka answers JSON (204 for empty). A redirect or an HTML page means the gate turned us away
+        # before Kanka saw the request, so retrying is safe even for writes.
+        if 300 <= r.status_code < 400:
+            return True
+        return r.status_code != 204 and "json" not in r.headers.get("Content-Type", "").lower()
+
+    def login(self, reason="Paste the Cookie header from a logged-in campaigns.l42.eu request"):
+        print(reason)
+        for _ in range(MAX_REPROMPTS):
+            cookies = parse_gate_cookies(ask("Gate cookie"))
+            if cookies:
+                self.s.cookies.clear()
+                for name, value in cookies.items():
+                    self.s.cookies.set(name, value, domain=urlparse(self.base).hostname)
+                return
+            print("No _oauth2_proxy cookie found in that; try again.")
+        raise SystemExit("No usable gate cookie supplied.")
+
+    def reauth(self):
+        self.login("Gate session expired (they last 15 minutes). Refresh campaigns.l42.eu in your browser and paste a fresh Cookie header")
+
+
+def preflight(token):
+    """The gate must turn away a request that carries the token but no cookie, or it isn't the gate we rely on."""
+    r = requests.get(KANKA_ORIGIN + "/api/1.0/profile", headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+                     allow_redirects=False, timeout=30)
+    if not 300 <= r.status_code < 400:
+        raise SystemExit(f"Preflight failed: a cookie-less request with the token got {r.status_code}, not a gate redirect. Nothing was written.")
 
 
 def mapping_for(chapter_name):
@@ -184,18 +255,18 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--book", default="Kaidoho")
     ap.add_argument("--campaign", type=int, help="Kanka campaign id (must be empty)")
-    ap.add_argument("--bookstack-url", default=os.environ.get("BOOKSTACK_URL"))
-    ap.add_argument("--kanka-url", default=os.environ.get("KANKA_URL"))
     ap.add_argument("--dry-run", action="store_true", help="read BookStack and print the mapping; write nothing")
-    ap.add_argument("--report", default="/report/kaidoho-migration-report.md")
+    ap.add_argument("--report", default="kaidoho-migration-report.md")
     args = ap.parse_args()
 
-    if not args.bookstack_url:
-        raise SystemExit("BOOKSTACK_URL / --bookstack-url is required")
-    INTERNAL_HOSTS.add(urlparse(args.bookstack_url).netloc)
-    for extra in filter(None, os.environ.get("BOOKSTACK_PUBLIC_HOSTS", "").split(",")):
-        INTERNAL_HOSTS.add(extra.strip())
-    bs = Api(args.bookstack_url, {"Authorization": f"Token {secret('bookstack_token_id')}:{secret('bookstack_token_secret')}"})
+    kanka_token = None
+    if not args.dry_run:
+        if not args.campaign:
+            raise SystemExit("--campaign is required for a real run")
+        kanka_token = ask("Kanka personal access token")
+        preflight(kanka_token)
+    INTERNAL_HOSTS.add(urlparse(BOOKSTACK_ORIGIN).netloc)
+    bs = Api(BOOKSTACK_ORIGIN, {"Authorization": f"Token {ask('BookStack token id')}:{ask('BookStack token secret')}"})
 
     book, refs = fetch_book(bs, args.book)
     pages = load_pages(bs, refs)
@@ -221,9 +292,8 @@ def main():
             print("NOTE:", line)
         return
 
-    if not args.kanka_url or not args.campaign:
-        raise SystemExit("--kanka-url and --campaign are required for a real run")
-    kanka = Api(args.kanka_url, {"Authorization": f"Bearer {secret('kanka_token')}", "Accept": "application/json"})
+    kanka = KankaApi(KANKA_ORIGIN, kanka_token)
+    kanka.login()
     cid = args.campaign
     existing = kanka.json("GET", f"/api/1.0/campaigns/{cid}/entities", params={"page": 1})
     if existing["data"]:
@@ -254,7 +324,7 @@ def main():
     lines = ["# Kaidoho migration report", "", f"{len(pages)} pages -> {len(pages)} entities, {n_images} inline images uploaded.", ""]
     lines += ["## Did not transfer cleanly", ""] + ([f"- {x}" for x in report] or ["- Nothing reported."])
     text = "\n".join(lines) + "\n"
-    os.makedirs(os.path.dirname(args.report), exist_ok=True)
+    os.makedirs(os.path.dirname(args.report) or ".", exist_ok=True)
     with open(args.report, "w") as f:
         f.write(text)
     print(text)
