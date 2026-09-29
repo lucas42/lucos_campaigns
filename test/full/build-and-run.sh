@@ -31,6 +31,17 @@ bad_key "without the base64: prefix" "$(head -c 32 /dev/urandom | base64)"
 bad_key "that is not base64" "base64:!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
 bad_key "that is empty" ""
 bad_key "that is unset" UNSET
+# ...but must not reject a key Laravel itself accepts (its base64_decode ignores whitespace and doesn't need padding).
+ok_key() { # description, key value
+	APP_KEY="$2" timeout 90 $C run --rm --no-deps --entrypoint sh lucos_campaigns_app -c '(. /etc/entrypoint.d/2-kanka-check-app-key.sh)' >/dev/null 2>&1
+	code=$?
+	if [ "$code" = 0 ]; then echo "ok   - APP_KEY $1: accepted, as Laravel would"; else echo "FAIL - APP_KEY $1: rejected (exit $code) but Laravel accepts it"; rc=1; fi
+}
+good32=$(head -c 32 /dev/urandom | base64)
+ok_key "with a trailing space" "base64:$good32 "
+ok_key "with a trailing newline" "base64:$good32
+"
+ok_key "with its padding stripped" "base64:$(printf %s "$good32" | tr -d =)"
 $C stop lucos_campaigns_search
 $C run --rm --no-deps client search-down || rc=1
 [ "$rc" = 0 ] || $C logs
