@@ -49,6 +49,10 @@ Mail is logged (`MAIL_DRIVER=log`; Kanka reads that legacy name, not `MAIL_MAILE
 
 Each start also runs `docker/60-kanka-first-run.sh`: it seeds Kanka, creates the Passport keys and client, and builds the search index, skipping each step once its own result exists, so a failure part-way is retried on the next start. To force a search rebuild, run `docker exec lucos_campaigns_app php artisan setup:meilisearch`.
 
+## Migrating Kaidoho
+
+One-off, run on avalon by hand: see [`migration/README.md`](migration/README.md). It uses `docker-compose.migration.yml`, which is never part of the deploy.
+
 ## Upgrading Kanka
 
 Change `KANKA_VERSION` **and** `KANKA_COMMIT` in the `Dockerfile` (the build fails if the tag has moved), one release tag at a time in upstream's order, with a database backup first. Migrations run on container start. Dependabot can't see Kanka's releases or its lockfiles; the build prints `composer audit` and `yarn audit` output as an advisory.

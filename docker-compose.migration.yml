@@ -1,0 +1,31 @@
+# MIGRATION ONLY: never part of the deploy. See migration/README.md (ADR-0001, decision 6).
+# Layer over docker-compose.yml. Adds an ungated /api listener on port 8081 inside the app container
+# (not published to the host) and a one-off migration container on the same project-private network.
+services:
+  lucos_campaigns_app:
+    volumes:
+      - ./nginx/migration-api.conf:/etc/nginx/conf.d/migration-api.conf:ro
+
+  lucos_campaigns_migration:
+    profiles: ["migration"]
+    build: migration
+    environment:
+      - BOOKSTACK_URL
+      - BOOKSTACK_PUBLIC_HOSTS
+      - KANKA_URL=http://lucos_campaigns_app:8081
+    secrets:
+      - bookstack_token_id
+      - bookstack_token_secret
+      - kanka_token
+    volumes:
+      - ${MIGRATION_REPORT_DIR:-./migration-report}:/report
+    depends_on:
+      - lucos_campaigns_app
+
+secrets:
+  bookstack_token_id:
+    file: ${MIGRATION_SECRETS_DIR}/bookstack_token_id
+  bookstack_token_secret:
+    file: ${MIGRATION_SECRETS_DIR}/bookstack_token_secret
+  kanka_token:
+    file: ${MIGRATION_SECRETS_DIR}/kanka_token
