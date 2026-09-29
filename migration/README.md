@@ -25,7 +25,7 @@ for f in bookstack_token_id bookstack_token_secret kanka_token; do read -rsp "$f
 
 ## Run
 
-From a checkout of this repo on avalon, with the production environment variables the deploy uses exported (the compose file needs them; take them from `lucos_creds`, not from history):
+From a checkout of this repo on avalon, with the production environment variables the deploy uses exported (the compose file needs them). Fetch them without typing values into the shell: `scp -P 2202 "creds.l42.eu:lucos_campaigns/production/.env" .env && set -a && . ./.env && set +a && rm .env` (lucas42 only, as production creds):
 
 Pin the project and image to what production is running first. The deploy uses `COMPOSE_PROJECT_NAME=lucos_campaigns`, and an unset `VERSION` would resolve the app image to `:latest` and could rebuild Kanka from source, so both are set and `--no-build` is used:
 
