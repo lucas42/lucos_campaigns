@@ -1,0 +1,1 @@
+{"advisories":{"laravel/framework":[{"advisoryId":"PKSA-test-0001","packageName":"laravel/framework","title":"Test advisory with `backticks` and @someone","link":"https://example.invalid/advisory/1","cve":"CVE-2099-0001","severity":"high"}]},"abandoned":[],"filter":[]}

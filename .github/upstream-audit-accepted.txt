@@ -1,0 +1,7 @@
+# Upstream advisories judged harmless for lucos_campaigns, one per line: <advisory-id>  # reason (YYYY-MM-DD).
+# Changed only by reviewed PR. Stale entries are listed in the workflow summary so they can be pruned.
+GHSA-c2c7-rcm5-vvqj  # picomatch ReDoS: build-time only, reached via @tiptap/cli and sass, never imported by Kanka's resources/ (2026-09-29)
+GHSA-3v7f-55p6-f55p  # picomatch: build-time only, reached via @tiptap/cli and sass, never imported by Kanka's resources/ (2026-09-29)
+GHSA-2883-xcg3-v3hh  # js-yaml CPU use in @tiptap/cli: a build-time CLI, never imported by Kanka's resources/ (2026-09-29)
+GHSA-px8p-9vwx-vf98  # fflate (via jspdf) infinite loop on a malformed ZIP: runs only in the gated user's own browser (2026-09-29)
+GHSA-2wm5-q62r-hmrv  # colord slow parse of malformed colours: runs only in the gated user's own browser (2026-09-29)
