@@ -148,7 +148,14 @@ starting with Kaidoho.
    see the base images but **not** Kanka's release tag, so noticing that a release exists
    is deferred work.
 
-6. **Migrate Kaidoho by script, once, re-runnably.** A one-shot script in this repo reads
+6. **Migrate Kaidoho by script, once, re-runnably.**
+
+   > **Superseded in part by [ADR-0002](0002-run-the-migration-locally-through-the-gate.md):** the
+   > "How it reaches Kanka's API" mechanism below (migration-only override, ungated
+   > listener, on-host run) was replaced. The script runs on lucas42's machine through
+   > the unchanged gate. The rest of this decision stands.
+
+   A one-shot script in this repo reads
    the Kaidoho book through BookStack's API and writes a new Kanka campaign through
    Kanka's API.
    - Kaidoho's chapters (types, per `lucos_worlds` ADR-0004) map to Kanka entity types:
