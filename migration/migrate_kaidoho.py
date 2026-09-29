@@ -210,10 +210,10 @@ class Cache:
 
     def __init__(self, root, refresh=False):
         self.root = root
-        if refresh:
-            shutil.rmtree(root, ignore_errors=True)
         os.makedirs(root, mode=0o700, exist_ok=True)
         for sub in ("pages", "images"):
+            if refresh:  # only what the cache itself creates: --cache-dir may be a directory that holds other things
+                shutil.rmtree(os.path.join(root, sub), ignore_errors=True)
             os.makedirs(os.path.join(root, sub), mode=0o700, exist_ok=True)
 
     def _write(self, path, data):

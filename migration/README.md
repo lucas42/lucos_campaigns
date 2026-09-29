@@ -42,9 +42,9 @@ The dry run prints the chapter → type mapping and N, and writes nothing. Kanka
 
 ## Local cache of BookStack
 
-Everything read from BookStack (each page's content and attachment list, and each inline image) is cached in `.kaidoho-cache/` in the working directory, so a re-run doesn't download it all again. A cached page is reused only while BookStack still reports the same `updated_at` for it; an image is cached by its upload path, which names one immutable file. So edits made in BookStack between runs are picked up by themselves, except a change to a page's attachments alone, which may not bump `updated_at`.
+Everything read from BookStack (each page's content and attachment list, and each inline image) is cached in `.kaidoho-cache/` in the working directory, so a re-run doesn't download it all again. A cached page is reused only while BookStack still reports the same `updated_at` for it; an image is cached by its upload path, which names one immutable file. So edits made in BookStack between runs are picked up by themselves, except a change to a page's attachments alone, or to a page that another page includes (BookStack includes), neither of which bumps the including page's `updated_at`. Use `--refresh` if you've edited such pages.
 
-- **Force a full re-download:** `--refresh`, or delete `.kaidoho-cache/`. `--cache-dir` moves it.
+- **Force a full re-download:** `--refresh` (it removes only the cache's own `pages/` and `images/` folders), or delete `.kaidoho-cache/`. `--cache-dir` moves it.
 - **What's in it:** BookStack content only (private, so the directory and files are owner-only). It never holds a token or the gate cookie. Delete it when you're done: `rm -r .kaidoho-cache`.
 - **With Docker** the working directory is `/out`, so the cache lands in the directory you mounted there.
 - The run prints how many pages came from the cache. Kanka is never cached: it is always read and written live.

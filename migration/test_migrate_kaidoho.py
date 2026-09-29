@@ -182,6 +182,15 @@ class CacheTest(unittest.TestCase):
         self.assertIsNone(m.Cache(self.root, refresh=True).page(1, "s"))
         self.assertEqual(os.listdir(os.path.join(self.root, "images")), [])
 
+    def test_refresh_leaves_unrelated_files_in_the_cache_dir_alone(self):
+        c = m.Cache(self.root)
+        c.put_page(1, "s", {"name": "P"})
+        keep = os.path.join(self.root, "notes.txt")
+        open(keep, "w").write("mine")
+        m.Cache(self.root, refresh=True)
+        self.assertTrue(os.path.exists(keep))
+        self.assertIsNone(m.Cache(self.root).page(1, "s"))
+
     def test_load_pages_uses_the_cache(self):
         class BS:
             calls = 0
