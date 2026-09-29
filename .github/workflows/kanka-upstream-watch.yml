@@ -19,18 +19,23 @@ concurrency:
   group: kanka-upstream-watch
   cancel-in-progress: false
 
-env:
-  GH_TOKEN: ${{ github.token }}
+# Explicit bash runs with -eo pipefail, so `script | tee` can't hide a failure.
+defaults:
+  run:
+    shell: bash
 
 jobs:
   next-release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - id: pin
         run: .github/scripts/kanka-pin.sh Dockerfile | tee -a "$GITHUB_OUTPUT"
       - id: next
         env:
+          GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.pin.outputs.version }}
         run: |
           set -euo pipefail
@@ -39,6 +44,7 @@ jobs:
       - name: Open the upgrade issue for the next release
         if: steps.next.outputs.next != ''
         env:
+          GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.pin.outputs.version }}
           NEXT: ${{ steps.next.outputs.next }}
           BEHIND: ${{ steps.next.outputs.behind }}
@@ -64,6 +70,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - id: pin
         run: .github/scripts/kanka-pin.sh Dockerfile | tee -a "$GITHUB_OUTPUT"
       - name: Check out upstream Kanka at the pinned tag
@@ -85,11 +93,14 @@ jobs:
           composer audit --working-dir=kanka-src --no-plugins --no-scripts --locked --no-dev --abandoned=ignore --format=json > composer-audit.json || true
           yarn --no-default-rc --cwd kanka-src audit --groups dependencies --json > yarn-audit.ndjson || true
       - name: Read Kanka's own published security advisories
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: gh api repos/owlchester/kanka/security-advisories > advisories.json
       - name: Filter through the accepted list
         run: .github/scripts/kanka-audit-findings.sh composer-audit.json yarn-audit.ndjson advisories.json .github/upstream-audit-accepted.txt audit-out
       - name: Create, update or close the findings issue
         env:
+          GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.pin.outputs.version }}
         run: .github/scripts/kanka-watch-issues.sh findings audit-out/findings.json "$VERSION" | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Summary
@@ -115,8 +126,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Open, update or close the "watch is failing" issue
         env:
+          GH_TOKEN: ${{ github.token }}
           RESULTS: ${{ needs.next-release.result }} ${{ needs.upstream-audit.result }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |

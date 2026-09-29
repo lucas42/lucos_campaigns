@@ -13,9 +13,10 @@ FINDINGS_TITLE="Upstream security findings in pinned Kanka"
 HEALTH_TITLE="Kanka upstream watch is failing"
 
 # One JSON object per issue (pull requests excluded), any state.
-load_issues() { gh api --paginate "repos/$repo/issues?state=all&per_page=100" --jq '.[] | select(.pull_request | not) | {number, title, state, body}' > "$tmp/issues.ndjson"; }
+# Only issues the bot or a repo collaborator opened count: on a public repo anyone can open an issue with a predictable title.
+load_issues() { gh api --paginate "repos/$repo/issues?state=all&per_page=100" --jq '.[] | select(.pull_request | not) | {number, title, state, body, trusted: ((.user.login == "github-actions[bot]") or (.author_association | IN("OWNER", "MEMBER", "COLLABORATOR")))}' > "$tmp/issues.ndjson"; }
 find_issue() { # title, state ("any" or "open") -> "<number> <state>" of the first match
-	jq -s -r --arg t "$1" --arg s "$2" 'map(select(.title == $t and ($s == "any" or .state == $s))) | first // empty | "\(.number) \(.state)"' "$tmp/issues.ndjson"
+	jq -s -r --arg t "$1" --arg s "$2" 'map(select(.trusted and .title == $t and ($s == "any" or .state == $s))) | first // empty | "\(.number) \(.state)"' "$tmp/issues.ndjson"
 }
 issue_body() { jq -s -r --argjson n "$1" 'map(select(.number == $n)) | first | .body // ""' "$tmp/issues.ndjson"; }
 mutate() { # description, then the gh api arguments (JSON payload on stdin)
@@ -53,13 +54,14 @@ cmd_findings() {
 		if [ -n "$open" ]; then comment_and_close "${open% *}" "No unaccepted upstream findings remain in the pinned Kanka $version, so this is closing itself."; else echo "no unaccepted findings, and no open findings issue"; fi
 		return
 	fi
-	local upgrades; upgrades=$(jq -s -r 'map(select(.state == "open" and (.title | startswith("Upgrade Kanka to ")))) | map("#\(.number)") | join(", ")' "$tmp/issues.ndjson")
+	local upgrades; upgrades=$(jq -s -r 'map(select(.trusted and .state == "open" and (.title | startswith("Upgrade Kanka to ")))) | map("#\(.number)") | join(", ")' "$tmp/issues.ndjson")
 	{
 		echo "The pinned Kanka ($version) has $n upstream finding(s) that are not in \`.github/upstream-audit-accepted.txt\`."
 		echo
 		echo "| Advisory | Package | Severity | Source | Details |"
 		echo "|---|---|---|---|---|"
-		jq -r '.[] | "| \(.id | gsub("[^A-Za-z0-9._-]"; "")) | \(.package | gsub("[^A-Za-z0-9._@/-]"; "")) | \(.severity | gsub("[^a-z]"; "")) | \(.source) | \(if (.url | test("^https://[^ )]+$")) then "[advisory](\(.url))" else "" end) `\(.title | gsub("[`|@\r\n]"; " "))` |"' "$file"
+		# Every value is upstream text: keep only safe characters, put free text and the package in code spans, and link only a strict https URL (\A..\z, so no newline can slip past).
+		jq -r '.[] | "| \(.id | gsub("[^A-Za-z0-9._-]"; "")) | `\(.package | gsub("[^A-Za-z0-9._@/-]"; ""))` | \(.severity | gsub("[^a-z]"; "")) | \(.source) | \(if (.url | test("\\Ahttps://[A-Za-z0-9._~:/?=&%-]+\\z")) then "[advisory](\(.url))" else "" end) `\(.title | gsub("[`|@\r\n]"; " ") | .[0:200])` |"' "$file"
 		echo
 		echo "The usual fix is upgrading Kanka.${upgrades:+ Open upgrade issue(s): $upgrades.}"
 		echo "If a finding is harmless here, add its ID and the reason to \`.github/upstream-audit-accepted.txt\` in a reviewed PR."

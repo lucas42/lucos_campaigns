@@ -61,7 +61,7 @@ shift; method=GET jq_filter=. endpoint="" input=""
 while [ $# -gt 0 ]; do case $1 in --paginate) ;; --method) method=$2; shift ;; --jq) jq_filter=$2; shift ;; --input) input=$2; shift ;; *) endpoint=$1 ;; esac; shift; done
 if [ "$method" = GET ]; then
 	[ "$endpoint" = "repos/o/r/issues?state=all&per_page=100" ] || { echo "unexpected GET $endpoint" >&2; exit 1; }
-	jq -c "$jq_filter" "$FAKE_ISSUES"
+	jq -c "map(.user //= {login: \"github-actions[bot]\"} | .author_association //= \"NONE\") | $jq_filter" "$FAKE_ISSUES"
 else
 	echo "$method $endpoint $(cat | jq -c .)" >> "$FAKE_LOG"; echo '{}'
 fi
@@ -88,15 +88,47 @@ echo '[{"number":4,"title":"Upgrade Kanka to 3.12 (from 3.10)","state":"closed",
 expect "upgrade: a different version pair still gets its issue" "0 1" "$(run upgrade 3.12 3.13 "$sha" 2 2026-06-30) $(writes)"
 expect "upgrade: unexpected values are refused" "1 0" "$(run upgrade 3.12 '3.13"; x' "$sha" 2 2026-06-30) $(writes)"
 
+echo "# issues: an untrusted author can't squat a title"
+echo '[{"number":4,"title":"Upgrade Kanka to 3.13 (from 3.12)","state":"open","body":"","user":{"login":"stranger"},"author_association":"NONE"}]' > "$FAKE_ISSUES"
+expect "squat: a stranger's issue with the upgrade title doesn't suppress the real one" "0 1" "$(run upgrade 3.12 3.13 "$sha" 2 2026-06-30) $(writes)"
+echo '[{"number":4,"title":"Upgrade Kanka to 3.13 (from 3.12)","state":"closed","body":"","user":{"login":"lucas42"},"author_association":"OWNER"}]' > "$FAKE_ISSUES"
+expect "squat: a collaborator's issue (closed as not planned, say) still suppresses it" "0 0" "$(run upgrade 3.12 3.13 "$sha" 2 2026-06-30) $(writes)"
+echo '[{"number":9,"title":"Upstream security findings in pinned Kanka","state":"open","body":"stranger text","user":{"login":"stranger"},"author_association":"NONE"}]' > "$FAKE_ISSUES"
+"$here/kanka-audit-findings.sh" "$fx/composer-finding.json" "$fx/yarn-3.15.ndjson" "$fx/advisories-one.json" "$accepted" "$tmp/two"
+res=$(run findings "$tmp/two/findings.json" 3.15)
+expect "squat: a stranger's issue with the findings title is not adopted or edited" "0 POST repos/o/r/issues" "$res $(cut -d' ' -f1-2 "$FAKE_LOG")"
+
 echo '[{"number":7,"title":"Upgrade Kanka to 3.16 (from 3.15)","state":"open","body":""}]' > "$FAKE_ISSUES"
 "$here/kanka-audit-findings.sh" "$fx/composer-finding.json" "$fx/yarn-3.15.ndjson" "$fx/advisories-one.json" "$accepted" "$tmp/two"
 expect "findings: created when there are findings and no open issue" "0 1" "$(run findings "$tmp/two/findings.json" 3.15) $(writes)"
 fbody=$(sed 's/^POST [^ ]* //' "$FAKE_LOG" | jq -r .body); ftitle=$(sed 's/^POST [^ ]* //' "$FAKE_LOG" | jq -r .title)
 expect "findings: single fixed title" "Upstream security findings in pinned Kanka" "$ftitle"
-contains "findings: lists the advisory with its link" "$fbody" "| PKSA-test-0001 | laravel/framework | high | composer audit | [advisory](https://example.invalid/advisory/1)"
+contains "findings: lists the advisory with its link" "$fbody" "| PKSA-test-0001 | \`laravel/framework\` | high | composer audit | [advisory](https://example.invalid/advisory/1)"
 contains "findings: links an open upgrade issue" "$fbody" "#7"
 lacks "findings: upstream text cannot mention anyone" "$fbody" "@someone"
 lacks "findings: upstream text cannot break out of its code span" "$fbody" "with \`backticks\`"
+echo "# findings: hostile upstream text (newlines, mentions, backticks, pipes, odd URLs)"
+"$here/kanka-audit-findings.sh" "$fx/composer-hostile.json" "$fx/yarn-3.15.ndjson" "$fx/advisories-none.json" "$accepted" "$tmp/hostile"
+echo '[]' > "$FAKE_ISSUES"; run findings "$tmp/hostile/findings.json" 3.15 > /dev/null
+hbody=$(sed 's/^POST [^ ]* //' "$FAKE_LOG" | jq -r .body)
+rows=$(printf '%s\n' "$hbody" | grep -c '^| [A-Za-z]' || true)
+expect "hostile: 4 findings give exactly 4 table rows plus the header (no injected rows)" "5" "$rows"
+expect "hostile: every table line stays a single well-formed row" "0" "$(printf '%s\n' "$hbody" | grep '^|' | grep -vcE '^\|.*\|$' || true)"
+# shellcheck disable=SC2016 # the backticks are literal: they strip markdown code spans
+outside=$(printf '%s\n' "$hbody" | sed 's/`[^`]*`//g')
+lacks "hostile: no mention survives outside a code span" "$outside" "@"
+# shellcheck disable=SC2016 # literal backticks
+contains "hostile: a scoped package is shown in a code span" "$hbody" '`@babel/core`'
+lacks "hostile: a URL with a newline is not linked" "$hbody" "a.invalid/x"
+lacks "hostile: a trailing-newline URL is not linked" "$hbody" "a.invalid/ok"
+lacks "hostile: a non-https URL is not linked" "$hbody" "insecure.invalid"
+lacks "hostile: a URL that breaks out of the link is not linked" "$hbody" "evil.invalid"
+longtitle=$(printf 'x%.0s' {1..500})
+jq -n --arg t "$longtitle" '{advisories: {"p/q": [{advisoryId: "PKSA-long", packageName: "p/q", title: $t, link: "https://a.invalid/x", severity: "low"}]}, abandoned: [], filter: []}' > "$tmp/composer-long.json"
+"$here/kanka-audit-findings.sh" "$tmp/composer-long.json" "$fx/yarn-3.15.ndjson" "$fx/advisories-none.json" "$accepted" "$tmp/long"
+echo '[]' > "$FAKE_ISSUES"; run findings "$tmp/long/findings.json" 3.15 > /dev/null
+lbody=$(sed 's/^POST [^ ]* //' "$FAKE_LOG" | jq -r .body)
+expect "hostile: a 500-character title is capped at 200" "200" "$(printf '%s' "$lbody" | grep -o 'x\{1,\}' | awk '{ print length($0) }' | sort -n | tail -1)"
 jq -n --arg b "$fbody" '[{"number":9,"title":"Upstream security findings in pinned Kanka","state":"open","body":$b},{"number":7,"title":"Upgrade Kanka to 3.16 (from 3.15)","state":"open","body":""}]' > "$FAKE_ISSUES"
 expect "findings: an up-to-date open issue is left alone" "0 0" "$(run findings "$tmp/two/findings.json" 3.15) $(writes)"
 jq -n '[{"number":9,"title":"Upstream security findings in pinned Kanka","state":"open","body":"old"}]' > "$FAKE_ISSUES"
