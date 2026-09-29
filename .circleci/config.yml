@@ -15,17 +15,32 @@ jobs:
           # requests must redirect (never 200), and a dead sidecar must fail closed. Uses
           # build-and-run.sh, not bind mounts: the remote Docker daemon can't see checked-out files.
           command: test/gate/build-and-run.sh
+  test-info:
+    docker:
+      - image: cimg/base:current
+    steps:
+      - checkout
+      - setup_remote_docker:
+          docker_layer_caching: true
+      - run:
+          name: Run /_info full-stack test
+          # The real Kanka image with MariaDB, Meilisearch and oauth2-proxy: every /_info check passes,
+          # gated routes stay gated, and a stopped search container shows as search.ok=false, not a 5xx.
+          command: test/full/build-and-run.sh
+          no_output_timeout: 30m
 workflows:
   version: 2
   build-deploy:
     jobs:
       - test-gate
+      - test-info
       - lucos/build:
           serial-group: << pipeline.project.slug >>/build/<< pipeline.git.branch >>
       - lucos/deploy-avalon:
           serial-group: deploy-avalon
           requires:
             - test-gate
+            - test-info
             - lucos/build
           filters:
             branches:

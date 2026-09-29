@@ -1,0 +1,15 @@
+# Layered over the root docker-compose.yml: the real image and sidecars, with throwaway test secrets.
+services:
+  lucos_campaigns_auth:
+    environment:
+      - OAUTH2_PROXY_OIDC_ISSUER_URL=http://aithne.invalid
+      - OAUTH2_PROXY_LOGIN_URL=http://aithne.invalid/oauth2/authorize
+      - OAUTH2_PROXY_REDEEM_URL=http://aithne.invalid/token
+      - OAUTH2_PROXY_OIDC_JWKS_URL=http://aithne.invalid/jwks
+  client:
+    build:
+      context: .
+      dockerfile: test/gate/client.Dockerfile
+    entrypoint: ["sh", "/full-assertions.sh"]
+    depends_on:
+      - lucos_campaigns_app

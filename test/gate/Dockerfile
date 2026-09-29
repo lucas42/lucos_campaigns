@@ -4,3 +4,5 @@ ENV SSL_MODE=off
 COPY docker/php-fpm-lucos.conf /usr/local/etc/php-fpm.d/zzz-lucos.conf
 COPY nginx/default.conf /etc/nginx/conf.d/default.conf
 COPY --chown=www-data:www-data test/gate/favicon.ico /var/www/html/public/favicon.ico
+# The real script with no Kanka behind it: exercises routing and the app-failed-to-boot path.
+COPY --chown=www-data:www-data docker/_info.php /var/www/html/public/_info.php

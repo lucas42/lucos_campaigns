@@ -42,5 +42,6 @@ RUN chmod +x /etc/entrypoint.d/45-kanka-storage.sh /etc/entrypoint.d/60-kanka-fi
 WORKDIR /var/www/html
 COPY --from=vendor --chown=www-data:www-data /var/www/html/ ./
 COPY --from=assets --chown=www-data:www-data /kanka/public/build ./public/build
+COPY --chown=www-data:www-data docker/_info.php ./public/_info.php
 RUN chown -R www-data:www-data bootstrap/cache storage
 USER www-data
