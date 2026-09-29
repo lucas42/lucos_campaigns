@@ -82,6 +82,8 @@ def ask(label):
                     return buf.decode(errors="replace").strip()
                 if byte == 3:
                     raise KeyboardInterrupt
+                if byte == 4 and not buf:
+                    raise EOFError
                 if byte in (8, 127):
                     del buf[-1:]
                 else:
