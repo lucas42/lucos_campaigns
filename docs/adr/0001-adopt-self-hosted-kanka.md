@@ -275,3 +275,17 @@ starting with Kaidoho.
 - A `/_info` endpoint and monitoring integration: #4
 - Noticing new Kanka releases (Dependabot can't see the source tag): #5
 - Make Kaidoho view-only in `lucos_worlds` after cutover: lucas42/lucos_worlds#94
+
+## Amendment (2026-09-29): the mail variable is `MAIL_DRIVER`
+
+Decision 2 lists `MAIL_MAILER=log`. Kanka doesn't read that variable. Its
+`config/mail.php` still uses Laravel's pre-7 flat layout, which reads `MAIL_DRIVER` and
+defaults it to `smtp` (with `smtp.mailgun.org` as the host). As written, then, the
+setting had no effect: Kanka attempted unauthenticated SMTP to mailgun, and a
+registration's welcome email returned a 500. The setting that carries out the decision is
+`MAIL_DRIVER=log` (lucas42/lucos_campaigns#18). Under the flat layout it also covers the
+Mailables that name a specific mailer, such as `'ses'`, because every mailer name
+resolves to `MAIL_DRIVER`. `MAIL_MAILER` and `MAIL_ENCRYPTION` are both ignored.
+
+Logging mail was the minimal-footprint default, not a decision against sending mail.
+Sending through `lucos_mail` is lucas42/lucos_campaigns#19.
