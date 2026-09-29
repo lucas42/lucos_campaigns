@@ -1,5 +1,5 @@
 # Stub app: the real gate config in front of an empty webroot, so the gate can be tested without building Kanka.
-FROM serversideup/php:8.4-fpm-nginx-v4.5.1@sha256:8e0864511c48a943b59c59c2845eb8de1dc402b6d549a3b2e0e45018f1b99567
+FROM serversideup/php:8.5-fpm-nginx-v4.5.1@sha256:531f20f5e74eb834de878ea8b5bcb6fd43923828b20e96783e97445273a705a5
 ENV SSL_MODE=off
 COPY docker/php-fpm-lucos.conf /usr/local/etc/php-fpm.d/zzz-lucos.conf
 COPY nginx/default.conf /etc/nginx/conf.d/default.conf
