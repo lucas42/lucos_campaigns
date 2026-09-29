@@ -30,11 +30,14 @@ Randomly generated secrets, specific to this system:
 Values that refer to aithne, which provides login:
 
 - `KEY_LUCOS_AITHNE`: the client secret for this system's aithne client, supplied by the linked credential from `lucos_aithne`.
-- `AITHNE_ORIGIN`, `AITHNE_TOKEN_URL`, `AITHNE_JWKS_URL`: the URLs of aithne's issuer, token and JWKS endpoints. These point at aithne, so take them from aithne's own configuration.
+- `AITHNE_ORIGIN`: aithne's browser-facing origin. It differs per environment, so set it for each one.
 
 Users also need the `campaigns:use` scope granted in aithne to get past the gate.
 
-Optional: `APP_REGISTRATION_ENABLED` (default `false`), only used during [first user](#first-user) setup.
+Optional:
+
+- `APP_REGISTRATION_ENABLED` (default `false`), only used during [first user](#first-user) setup.
+- `AITHNE_TOKEN_URL` and `AITHNE_JWKS_URL`: the addresses oauth2-proxy uses to call aithne from inside its container. They default to paths under `AITHNE_ORIGIN`, so leave them unset unless the container can't reach that origin (in development, where `AITHNE_ORIGIN` is `localhost`).
 
 ## First user
 
