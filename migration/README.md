@@ -15,7 +15,7 @@ One-shot, re-runnable copy of the Kaidoho book from `lucos_worlds` into an **emp
 - **BookStack:** create a dedicated **read-only** BookStack user (a role with only "Access system API" plus view rights), and give it an API token. Tokens inherit the user's permissions.
 - **Kanka:** lucas42's personal access token (Settings → API), and create the empty campaign in the UI first; its id is in the URL.
 
-Put each in its own file, outside the repo, without the values touching shell history or CI logs:
+Put each in its own file, outside the repo, without the values touching shell history or CI logs (bash, for `read -s`):
 
 ```sh
 export MIGRATION_SECRETS_DIR=$HOME/.campaigns-migration-secrets
@@ -27,10 +27,14 @@ for f in bookstack_token_id bookstack_token_secret kanka_token; do read -rsp "$f
 
 From a checkout of this repo on avalon, with the production environment variables the deploy uses exported (the compose file needs them; take them from `lucos_creds`, not from history):
 
+Pin the project and image to what production is running first. The deploy uses `COMPOSE_PROJECT_NAME=lucos_campaigns`, and an unset `VERSION` would resolve the app image to `:latest` and could rebuild Kanka from source, so both are set and `--no-build` is used:
+
 ```sh
+export COMPOSE_PROJECT_NAME=lucos_campaigns
+export VERSION=$(docker inspect lucos_campaigns_app --format '{{.Config.Image}}' | cut -d: -f2)
 export BOOKSTACK_URL=https://worlds.l42.eu   # or http://172.17.0.1:8040, the host port
 C="docker compose -f docker-compose.yml -f docker-compose.migration.yml"
-$C up -d --no-deps lucos_campaigns_app       # adds the ungated /api listener (port 8081, unpublished)
+$C up -d --no-build --no-deps lucos_campaigns_app   # briefly restarts the production app; adds the ungated /api listener (port 8081, unpublished)
 $C run --rm lucos_campaigns_migration --dry-run
 $C run --rm lucos_campaigns_migration --campaign <id>
 cat migration-report/kaidoho-migration-report.md
@@ -41,7 +45,7 @@ cat migration-report/kaidoho-migration-report.md
 ## Afterwards
 
 1. **Revoke** the BookStack token (and delete its user) and the Kanka token. Remove `$MIGRATION_SECRETS_DIR`.
-2. Redeploy the app from the shipped configuration (the normal deploy, or `docker compose -f docker-compose.yml up -d --force-recreate --no-deps lucos_campaigns_app`).
+2. Redeploy the app from the shipped configuration (the normal deploy, or `docker compose -f docker-compose.yml up -d --no-build --force-recreate --no-deps lucos_campaigns_app`, with the same `COMPOSE_PROJECT_NAME` and `VERSION` exported (this also briefly restarts the app)).
 3. **Verify the listener has gone:**
 
    ```sh
