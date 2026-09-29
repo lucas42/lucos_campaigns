@@ -8,8 +8,8 @@ count() { php -r 'require "vendor/autoload.php"; $app = require "bootstrap/app.p
 
 [ "$(count 'App\Models\EntityType::count()')" != "0" ] || php artisan db:seed --force
 
-[ -f storage/oauth-private.key ] && [ -f storage/oauth-public.key ] || php artisan passport:keys --force
-[ "$(count 'Laravel\Passport\Client::count()')" != "0" ] || php artisan passport:client --personal --name=Campaigns --no-interaction
+[ -f storage/oauth-private.key ] && [ -f storage/oauth-public.key ] || php artisan passport:keys --force >/dev/null
+[ "$(count 'Laravel\Passport\Client::count()')" != "0" ] || php artisan passport:client --personal --name=Campaigns --no-interaction >/dev/null
 
 # setup:meilisearch rebuilds from scratch, so only run it when the index or our done-marker is missing.
 index=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $MEILISEARCH_KEY" "$MEILISEARCH_HOST/indexes/entities" || true)
