@@ -11,7 +11,7 @@ Four containers on avalon, on the project's own private network (no shared estat
 - `lucos_campaigns_search`: Meilisearch.
 - `lucos_campaigns_auth`: oauth2-proxy, gating every request on the `campaigns:use` aithne scope.
 
-`nginx/default.conf` is the only server block. `auth_request` is set at server level, so a new `location` is gated by default; only `= /_info` and `= /favicon.ico` opt out. `test/gate/` runs that config against an oauth2-proxy in CI (redirect when unauthenticated, 5xx when the sidecar is down).
+`nginx/default.conf` is the only server block. `auth_request` is set at server level, so a new `location` is gated by default; only `= /_info` and `= /favicon.ico` opt out. `test/gate/` runs that config against an oauth2-proxy in CI (redirect when unauthenticated, 5xx when the sidecar is down). `test/full/` runs the real image with its sidecars and checks `/_info` (`docker/_info.php`, which boots Kanka in-process and checks the app, MariaDB, Meilisearch and the oauth2-proxy).
 
 Upstream's Docker/Sail setup is not used anywhere.
 
