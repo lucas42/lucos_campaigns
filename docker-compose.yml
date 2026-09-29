@@ -26,7 +26,7 @@ services:
       - SESSION_DRIVER=database
       - SESSION_SECURE_COOKIE=true
       - BROADCAST_DRIVER=null
-      - MAIL_MAILER=log
+      - MAIL_DRIVER=log
       - MAIL_FROM_ADDRESS=noreply@l42.eu
       - FILESYSTEM_DRIVER=public
       - LOG_CHANNEL=daily
