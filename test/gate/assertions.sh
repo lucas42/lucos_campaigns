@@ -1,5 +1,6 @@
 #!/bin/sh
-# Usage: assertions.sh up|sidecar-down. Unauthenticated requests only: nothing here can ever be logged in.
+# Usage: assertions.sh up|sidecar-down|authed. up/sidecar-down make unauthenticated requests against the real sidecar;
+# authed talks to the same gate config behind a stub that always authorises, to see what a logged-in request reaches.
 BASE=http://app:8080
 fail=0
 status() { curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$@"; }
@@ -8,6 +9,14 @@ expect() { # description, expected-code-regex, actual
 }
 
 case "$1" in
+authed)
+	BASE=http://app_authed:8080
+	for p in / /login /campaigns/1; do
+		expect "authorised GET $p reaches PHP" 200 "$(status "$BASE$p")"
+	done
+	expect "authorised GET / body comes from the front controller" 1 "$(curl -s --max-time 15 "$BASE/" | grep -c stub-index)"
+	expect "authorised GET /storage/a.php is still never executed" 404 "$(status "$BASE/storage/a.php")"
+	;;
 up)
 	for p in / /login /register /api/1.0/campaigns /storage/a.png /index.php /favicon.ico/x; do
 		expect "GET $p is redirected to the login flow" 302 "$(status "$BASE$p")"
