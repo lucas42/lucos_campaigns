@@ -44,4 +44,10 @@ COPY --from=vendor --chown=www-data:www-data /var/www/html/ ./
 COPY --from=assets --chown=www-data:www-data /kanka/public/build ./public/build
 COPY --chown=www-data:www-data docker/_info.php ./public/_info.php
 RUN chown -R www-data:www-data bootstrap/cache storage
+# Icon fallback for the Free-only stylesheet Kanka loads without a kit. Fails the build if an upgrade moves these files.
+COPY docker/fontawesome-free-fallback.css /tmp/fontawesome-free-fallback.css
+RUN fa=public/vendor/fontawesome/6.0.0 \
+ && test -f "$fa/css/all.min.css" && test -f "$fa/webfonts/fa-solid-900.woff2" \
+ && { echo; cat /tmp/fontawesome-free-fallback.css; } >> "$fa/css/all.min.css" \
+ && rm /tmp/fontawesome-free-fallback.css
 USER www-data

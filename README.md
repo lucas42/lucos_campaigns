@@ -53,6 +53,10 @@ Each start also runs `docker/60-kanka-first-run.sh`: it seeds Kanka, creates the
 
 One-off, run on avalon by hand: see [`migration/README.md`](migration/README.md). It uses `docker-compose.migration.yml`, which is never part of the deploy.
 
+## Icons
+
+Kanka's UI is written for Font Awesome Pro, but without a Pro kit (`FONTAWESOME_KIT`) it loads only the bundled Free 6.0.0, which has few regular icons and no light, thin or duotone ones. Most icons would render blank. `docker/fontawesome-free-fallback.css` is appended to that bundled stylesheet in the `Dockerfile`: missing icons fall back to Free solid, and seven Pro-only module icons have Free stand-ins. The build fails if Kanka moves the stylesheet. Setting a kit turns the fallback off. When you pick an icon in Kanka (tags, links, timeline elements, bookmarks), its picker links to Font Awesome's full catalogue, so choose a **Free** icon or it will render blank.
+
 ## Upgrading Kanka
 
 Change `KANKA_VERSION` **and** `KANKA_COMMIT` in the `Dockerfile` (the build fails if the tag has moved), one release tag at a time in upstream's order, with a database backup first. Migrations run on container start. Dependabot can't see Kanka's releases or its lockfiles; the build prints `composer audit` and `yarn audit` output as an advisory.

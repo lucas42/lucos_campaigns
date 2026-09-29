@@ -1,0 +1,19 @@
+/*
+ * Appended to Kanka's bundled Font Awesome Free 6.0.0 stylesheet at image build (see Dockerfile).
+ * Kanka's UI is written for Font Awesome Pro, but without FONTAWESOME_KIT it loads only Free.
+ * Free has few regular icons and no light, thin or duotone, so most icons render blank.
+ * This falls back to Free solid glyphs. It applies only when no kit is set. Do not drop it in an upgrade.
+ */
+@font-face{font-family:"lucos fa solid fallback";font-style:normal;font-weight:400 900;font-display:block;src:url("../webfonts/fa-solid-900.woff2") format("woff2")}
+/* Regular: the browser falls back per glyph, so icons Free has in regular stay outlined and the rest render solid */
+.far,.fa-regular{font-family:"Font Awesome 6 Free","lucos fa solid fallback"}
+/* Styles Free doesn't ship */
+.fal,.fa-light,.fat,.fa-thin,.fad,.fa-duotone{font-family:"lucos fa solid fallback";font-weight:900}
+/* Pro-only module icons: Free solid stand-ins */
+.fa-family::before{content:"\e1b0"}                /* house-user */
+.fa-circle-location-arrow::before{content:"\f3c5"} /* location-dot */
+.fa-screen-users::before{content:"\f0c0"}          /* users */
+.fa-person-fairy::before{content:"\f6e8"}          /* hat-wizard */
+.fa-books::before{content:"\f02d"}                 /* book */
+.fa-list-timeline::before{content:"\e29c"}         /* timeline */
+.fa-deer::before{content:"\f1b0"}                  /* paw */
