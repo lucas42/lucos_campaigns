@@ -16,6 +16,8 @@ class Gate(http.server.BaseHTTPRequestHandler):
         if self.path.startswith("/leak"):
             return self._send(200, b"leaked", "text/plain")
         good = "_oauth2_proxy=good" in (self.headers.get("Cookie") or "")
+        if self.mode == "bad-gateway":
+            return self._send(502, b"<html>bad gateway</html>", "text/html")
         if self.path == "/api/1.0/bad-token":
             return self._send(401, b'{"message":"Unauthenticated."}', "application/json")
         if not good and self.mode != "open":
@@ -74,11 +76,21 @@ class GateTest(unittest.TestCase):
         self.assertEqual([e[0] for e in Gate.log], ["POST", "POST"])  # the retry is the same call, once
         self.assertNotIn("kanka_session", Gate.log[-1][2])
 
-    def test_html_response_counts_as_gate_expiry(self):
+    def test_non_redirect_html_is_not_expiry_and_is_never_retried(self):
         Gate.mode = "html"
-        k = self.kanka("_oauth2_proxy=stale")
-        with mock.patch.object(m, "ask", return_value="_oauth2_proxy=good"):
-            self.assertEqual(k.json("GET", "/api/1.0/x"), {"data": {"id": 1}})
+        with mock.patch.object(m, "ask") as ask:
+            with self.assertRaises(ValueError):  # 200 HTML: not JSON; and, crucially, no re-prompt or resend
+                self.kanka("_oauth2_proxy=stale").json("POST", "/api/1.0/x")
+        ask.assert_not_called()
+        self.assertEqual([e[0] for e in Gate.log], ["POST"])
+
+    def test_post_gate_5xx_is_an_error_not_expiry(self):
+        Gate.mode = "bad-gateway"
+        with mock.patch.object(m, "ask") as ask:
+            with self.assertRaisesRegex(RuntimeError, "502"):
+                self.kanka().json("POST", "/api/1.0/x")
+        ask.assert_not_called()
+        self.assertEqual(len(Gate.log), 1)
 
     def test_json_error_is_an_error_not_expiry(self):
         with mock.patch.object(m, "ask") as ask:

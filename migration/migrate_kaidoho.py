@@ -110,11 +110,9 @@ class KankaApi(Api):
         super().__init__(base, {"Authorization": f"Bearer {token}", "Accept": "application/json"})
 
     def expired(self, r):
-        # Kanka answers JSON (204 for empty). A redirect or an HTML page means the gate turned us away
-        # before Kanka saw the request, so retrying is safe even for writes.
-        if 300 <= r.status_code < 400:
-            return True
-        return r.status_code != 204 and "json" not in r.headers.get("Content-Type", "").lower()
+        # The gate always answers a refused request with a redirect. A non-JSON 5xx comes from behind it, so the
+        # request may have reached Kanka: that's an error, not something to retry.
+        return 300 <= r.status_code < 400
 
     def login(self, reason="Paste the Cookie header from a logged-in campaigns.l42.eu request"):
         print(reason)
