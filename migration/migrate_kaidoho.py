@@ -168,10 +168,11 @@ def load_pages(bs, page_refs):
     for chapter, pid in page_refs:
         p = bs.json("GET", f"/api/pages/{pid}")
         atts = bs.json("GET", "/api/attachments", params={"filter[uploaded_to]": pid, "count": 100})["data"]
+        kind, label, _ = mapping_for(chapter)
         out.append({
             "bs_id": p["id"], "name": p["name"], "slug": p["slug"],
             "chapter": chapter, "html": p.get("html") or "", "attachments": [a["name"] for a in atts],
-            "kind": mapping_for(chapter)[0], "label": mapping_for(chapter)[1],
+            "kind": kind, "label": label,
         })
     return out
 

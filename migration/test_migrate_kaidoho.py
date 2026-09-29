@@ -9,6 +9,7 @@ import migrate_kaidoho as m
 class Gate(http.server.BaseHTTPRequestHandler):
     """Stand-in for the aithne gate + Kanka: 302 unless the session cookie is right, then JSON."""
     log = []
+    status = 502
     mode = "gate"  # "gate": redirect without a good cookie; "html": 200 HTML without one; "open": never gate
 
     def _serve(self):
@@ -17,7 +18,7 @@ class Gate(http.server.BaseHTTPRequestHandler):
             return self._send(200, b"leaked", "text/plain")
         good = "_oauth2_proxy=good" in (self.headers.get("Cookie") or "")
         if self.mode == "bad-gateway":
-            return self._send(502, b"<html>bad gateway</html>", "text/html")
+            return self._send(self.status, b"<html>error</html>", "text/html")
         if self.path == "/api/1.0/bad-token":
             return self._send(401, b'{"message":"Unauthenticated."}', "application/json")
         if not good and self.mode != "open":
@@ -84,13 +85,15 @@ class GateTest(unittest.TestCase):
         ask.assert_not_called()
         self.assertEqual([e[0] for e in Gate.log], ["POST"])
 
-    def test_post_gate_5xx_is_an_error_not_expiry(self):
+    def test_html_errors_from_behind_the_gate_are_errors_not_expiry(self):
         Gate.mode = "bad-gateway"
-        with mock.patch.object(m, "ask") as ask:
-            with self.assertRaisesRegex(RuntimeError, "502"):
-                self.kanka().json("POST", "/api/1.0/x")
-        ask.assert_not_called()
-        self.assertEqual(len(Gate.log), 1)
+        for status in (413, 502, 504):
+            Gate.status, Gate.log = status, []
+            with mock.patch.object(m, "ask") as ask:
+                with self.assertRaisesRegex(RuntimeError, str(status)):
+                    self.kanka().json("POST", "/api/1.0/x")
+            ask.assert_not_called()
+            self.assertEqual(len(Gate.log), 1, "the request must not be resent")
 
     def test_json_error_is_an_error_not_expiry(self):
         with mock.patch.object(m, "ask") as ask:
