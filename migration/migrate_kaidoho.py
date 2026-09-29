@@ -50,8 +50,48 @@ GATE_COOKIE_RE = re.compile(r"^_oauth2_proxy(_\d+)?$")
 MAX_REPROMPTS = 3
 
 
+TTY_PATH = "/dev/tty"
+
+
 def ask(label):
-    return getpass.getpass(f"{label}: ").strip()
+    """Hidden prompt. Reads the terminal without canonical line mode, since a full Cookie header is longer than the
+    line limit (1024 bytes on macOS) that makes getpass stop accepting input. Falls back to getpass without a tty."""
+    try:
+        import termios
+        fd = os.open(TTY_PATH, os.O_RDWR | os.O_NOCTTY)
+    except (ImportError, OSError):
+        return getpass.getpass(f"{label}: ").strip()
+    try:
+        old = termios.tcgetattr(fd)
+        raw = termios.tcgetattr(fd)
+        raw[3] &= ~(termios.ECHO | termios.ICANON)
+        raw[6][termios.VMIN], raw[6][termios.VTIME] = 1, 0
+        termios.tcsetattr(fd, termios.TCSAFLUSH, raw)
+    except termios.error:
+        os.close(fd)
+        return getpass.getpass(f"{label}: ").strip()
+    buf = bytearray()
+    try:
+        os.write(fd, f"{label}: ".encode())
+        while True:
+            chunk = os.read(fd, 65536)
+            if not chunk:
+                raise EOFError
+            for byte in chunk:
+                if byte in (10, 13):
+                    return buf.decode(errors="replace").strip()
+                if byte == 3:
+                    raise KeyboardInterrupt
+                if byte == 4 and not buf:
+                    raise EOFError
+                if byte in (8, 127):
+                    del buf[-1:]
+                else:
+                    buf.append(byte)
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+        os.write(fd, b"\n")
+        os.close(fd)
 
 
 def parse_gate_cookies(header):
@@ -122,6 +162,7 @@ class KankaApi(Api):
                 self.s.cookies.clear()
                 for name, value in cookies.items():
                     self.s.cookies.set(name, value, domain=urlparse(self.base).hostname)
+                print("Using " + ", ".join(f"{n} ({len(v)} chars)" for n, v in cookies.items()))
                 return
             print("No _oauth2_proxy cookie found in that; try again.")
         raise SystemExit("No usable gate cookie supplied.")
