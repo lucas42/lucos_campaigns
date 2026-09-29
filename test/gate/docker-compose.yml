@@ -1,0 +1,34 @@
+services:
+  app:
+    build:
+      context: ../..
+      dockerfile: test/gate/Dockerfile
+    depends_on:
+      - lucos_campaigns_auth
+  lucos_campaigns_auth:
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.15.3
+    environment:
+      - OAUTH2_PROXY_HTTP_ADDRESS=0.0.0.0:4180
+      - OAUTH2_PROXY_PROVIDER=oidc
+      - OAUTH2_PROXY_CLIENT_ID=lucos_campaigns
+      - OAUTH2_PROXY_CLIENT_SECRET=dummy
+      - OAUTH2_PROXY_COOKIE_SECRET=0123456789abcdef0123456789abcdef
+      - OAUTH2_PROXY_REDIRECT_URL=http://app:8080/oauth2/callback
+      - OAUTH2_PROXY_OIDC_ISSUER_URL=http://aithne.invalid
+      - OAUTH2_PROXY_SKIP_OIDC_DISCOVERY=true
+      - OAUTH2_PROXY_LOGIN_URL=http://aithne.invalid/oauth2/authorize
+      - OAUTH2_PROXY_REDEEM_URL=http://aithne.invalid/token
+      - OAUTH2_PROXY_OIDC_JWKS_URL=http://aithne.invalid/jwks
+      - OAUTH2_PROXY_OIDC_ENABLED_SIGNING_ALGS=ES256
+      - OAUTH2_PROXY_OIDC_GROUPS_CLAIM=scopes
+      - OAUTH2_PROXY_ALLOWED_GROUPS=campaigns:use
+      - OAUTH2_PROXY_SCOPE=openid email profile campaigns:use
+      - OAUTH2_PROXY_EMAIL_DOMAINS=*
+      - OAUTH2_PROXY_UPSTREAMS=static://202
+      - OAUTH2_PROXY_SET_XAUTHREQUEST=true
+  client:
+    build:
+      context: ../..
+      dockerfile: test/gate/client.Dockerfile
+    depends_on:
+      - app
