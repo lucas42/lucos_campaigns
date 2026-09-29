@@ -4,7 +4,7 @@ One-shot, re-runnable copy of the Kaidoho book from `lucos_worlds` into an **emp
 
 ## What it does
 
-- Chapter → Kanka type: `PC(s)`/`NPC(s)` → Characters, `Place(s)` → Locations; loose pages and every other chapter → Notes (each unmapped chapter is listed in the report). Edit `CHAPTER_TYPES` in `migrate_kaidoho.py` if the real chapter names differ; `--dry-run` prints the mapping without writing.
+- Chapter → Kanka type, per `CHAPTER_TYPES` in `migrate_kaidoho.py` (agreed on lucos_campaigns#3): People/Player Characters/Religon → Characters, Monsters → Creatures, Organisations/Military → Organisations, the place chapters → Locations, Session Notes → Journals, History/Culture → Notes. Templates is skipped. Each entity's Kanka `type` label is its chapter name (Religon is relabelled Religion). Loose pages and any unlisted chapter become Notes and are reported. `--dry-run` prints the mapping without writing.
 - Page HTML becomes the entity entry. Internal links (`/books/<book>/page/<slug>` and `/link/<id>`) become Kanka mentions; links to chapters/books or missing pages stay as plain links and are reported.
 - Inline images are downloaded and re-uploaded via the entity-image endpoint (the gallery API writes to an S3 disk this stack doesn't have), so they are served from `/storage` behind the gate.
 - After each save the script compares `<details>`/`<summary>`/`<table>` counts in the source and in what Kanka stored, and reports any loss (ADR-0005 stat blocks). Attachments can't be created through Kanka's API and are reported. Both end up in `kaidoho-migration-report.md`, for lucas42.
