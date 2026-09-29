@@ -37,8 +37,8 @@ RUN install-php-extensions gd intl bcmath exif
 COPY docker/php-lucos.ini /usr/local/etc/php/conf.d/99-lucos.ini
 COPY docker/php-fpm-lucos.conf /usr/local/etc/php-fpm.d/zzz-lucos.conf
 COPY nginx/default.conf /etc/nginx/conf.d/default.conf
-COPY docker/45-kanka-storage.sh docker/60-kanka-first-run.sh /etc/entrypoint.d/
-RUN chmod +x /etc/entrypoint.d/45-kanka-storage.sh /etc/entrypoint.d/60-kanka-first-run.sh
+COPY docker/2-kanka-check-app-key.sh docker/45-kanka-storage.sh docker/60-kanka-first-run.sh /etc/entrypoint.d/
+RUN chmod +x /etc/entrypoint.d/2-kanka-check-app-key.sh /etc/entrypoint.d/45-kanka-storage.sh /etc/entrypoint.d/60-kanka-first-run.sh
 WORKDIR /var/www/html
 COPY --from=vendor --chown=www-data:www-data /var/www/html/ ./
 COPY --from=assets --chown=www-data:www-data /kanka/public/build ./public/build

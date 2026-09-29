@@ -7,7 +7,7 @@ export PORT=8080 APP_ORIGIN=http://localhost:8080 SYSTEM=lucos_campaigns \
 	MEILI_MASTER_KEY=test-master-key-0123456789 KEY_LUCOS_AITHNE=dummy \
 	OAUTH2_PROXY_COOKIE_SECRET=0123456789abcdef0123456789abcdef AITHNE_ORIGIN=http://aithne.invalid
 C="docker compose -p campaigns-full -f docker-compose.yml -f test/full/docker-compose.yml"
-cleanup() { $C down -v; }
+cleanup() { $C down -v --remove-orphans; }
 $C build && $C up -d lucos_campaigns_app || { $C logs; cleanup; exit 1; }
 # First start migrates, seeds and indexes, so wait for every check to pass rather than for nginx.
 $C run --rm --entrypoint sh client -c 'for i in $(seq 1 90); do curl -s --max-time 5 http://lucos_campaigns_app:8080/_info | jq -e "[.checks[].ok] | all" >/dev/null && exit 0; sleep 5; done; curl -s http://lucos_campaigns_app:8080/_info; exit 1' || { $C logs; cleanup; exit 1; }
@@ -16,6 +16,21 @@ $C run --rm client up || rc=1
 # Kanka's config/mail.php reads the legacy MAIL_DRIVER (default smtp), not MAIL_MAILER: assert what the app really resolves.
 mail=$($C exec -T lucos_campaigns_app php artisan config:show mail.driver 2>/dev/null | awk 'NF {v=$NF} END {print v}')
 if [ "$mail" = log ]; then echo "ok   - mail.driver resolves to log, so no mail is sent"; else echo "FAIL - mail.driver resolves to '$mail', wanted log"; rc=1; fi
+# A wrong-shaped APP_KEY must stop the real image at start, with a message naming APP_KEY and never the key.
+bad_key() { # description, key value (or UNSET)
+	if [ "$2" = UNSET ]; then out=$(env -u APP_KEY timeout 90 $C run --rm --no-deps lucos_campaigns_app 2>&1); else out=$(APP_KEY="$2" timeout 90 $C run --rm --no-deps lucos_campaigns_app 2>&1); fi
+	code=$?
+	payload=${2#base64:}
+	if [ "$code" = 0 ] || [ "$code" = 124 ]; then echo "FAIL - APP_KEY $1: container did not fail at start (exit $code)"; rc=1
+	elif ! echo "$out" | grep -q 'APP_KEY'; then echo "FAIL - APP_KEY $1: failed (exit $code) without naming APP_KEY"; rc=1
+	elif [ "$2" != UNSET ] && [ -n "$payload" ] && echo "$out" | grep -qF -- "$payload"; then echo "FAIL - APP_KEY $1: the message contains the key"; rc=1
+	else echo "ok   - APP_KEY $1: container refuses to start (exit $code), message names APP_KEY"; fi
+}
+bad_key "of 16 bytes" "base64:$(head -c 16 /dev/urandom | base64)"
+bad_key "without the base64: prefix" "$(head -c 32 /dev/urandom | base64)"
+bad_key "that is not base64" "base64:!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+bad_key "that is empty" ""
+bad_key "that is unset" UNSET
 $C stop lucos_campaigns_search
 $C run --rm --no-deps client search-down || rc=1
 [ "$rc" = 0 ] || $C logs

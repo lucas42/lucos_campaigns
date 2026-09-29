@@ -21,7 +21,7 @@ These must all exist in `lucos_creds` for the environment **before that environm
 
 Randomly generated secrets, specific to this system:
 
-- `APP_KEY`: `base64:` followed by 32 random bytes, base64-encoded. Encrypts Kanka's sessions and other encrypted data, so changing it later invalidates them.
+- `APP_KEY`: `base64:` followed by 32 random bytes, base64-encoded: `echo "base64:$(openssl rand -base64 32)"`. Encrypts Kanka's sessions and other encrypted data, so changing it later invalidates them. The container refuses to start if it isn't exactly that shape.
 - `DB_PASSWORD`: the MariaDB password for Kanka's database user.
 - `DB_ROOT_PASSWORD`: the MariaDB root password.
 - `MEILI_MASTER_KEY`: shared by Meilisearch and Kanka's search client.
