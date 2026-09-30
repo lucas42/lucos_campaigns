@@ -112,6 +112,9 @@ services:
       - OAUTH2_PROXY_COOKIE_SECRET=${OAUTH2_PROXY_COOKIE_SECRET}
       - OAUTH2_PROXY_COOKIE_SECURE=${OAUTH2_PROXY_COOKIE_SECURE:-true}
       - OAUTH2_PROXY_COOKIE_SAMESITE=lax
+      # Session lifetime from login; it doesn't slide. Explicit so an upstream default change can't alter it.
+      - OAUTH2_PROXY_COOKIE_EXPIRE=168h
+      # Don't set OAUTH2_PROXY_COOKIE_REFRESH while aithne issues no refresh token: it turns on token-expiry checks and sessions would end every 15 minutes.
       - OAUTH2_PROXY_REDIRECT_URL=${APP_ORIGIN}/oauth2/callback
       - OAUTH2_PROXY_OIDC_ISSUER_URL=${AITHNE_ORIGIN}
       - OAUTH2_PROXY_SKIP_OIDC_DISCOVERY=true

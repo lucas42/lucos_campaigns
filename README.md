@@ -49,6 +49,10 @@ Mail is logged (`MAIL_DRIVER=log`; Kanka reads that legacy name, not `MAIL_MAILE
 
 Each start also runs `docker/60-kanka-first-run.sh`: it seeds Kanka, creates the Passport keys and client, and builds the search index, skipping each step once its own result exists, so a failure part-way is retried on the next start. To force a search rebuild, run `docker exec lucos_campaigns_app php artisan setup:meilisearch`.
 
+## If Save does nothing
+
+If Save does nothing, open Campaigns in another tab, then click Save again. Don't reload the edit page, or the unsaved text is lost.
+
 ## Migrating Kaidoho
 
 One-off, run on lucas42's own machine through the normal gate; nothing is added to avalon: see [`migration/README.md`](migration/README.md).
