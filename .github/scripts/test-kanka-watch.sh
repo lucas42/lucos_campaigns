@@ -3,7 +3,7 @@
 set -uo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 fx=$here/fixtures
-accepted=$here/../upstream-audit-accepted.txt
+accepted=$fx/accepted.txt
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 fail=0
 expect() { # description, expected, actual
