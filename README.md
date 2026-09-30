@@ -63,6 +63,8 @@ Kanka's UI is written for Font Awesome Pro, but without a Pro kit (`FONTAWESOME_
 
 The `Dockerfile` also patches Kanka's command search (the top-bar `command-center`) to skip the plugins page while the marketplace is off; without it `GET /w/{campaign}/search/command` returns a 500 because the plugins route isn't registered. The build fails if Kanka changes that code, so drop the patch once upstream fixes it.
 
+It also widens the hover-tooltip tag allow-list (`config/purify.php`) to keep list markup. Without it, `ul`/`li`/`em` are stripped and the tooltip's flex-column container puts every mention inside a list on its own line. The build fails if that list changes upstream.
+
 ## Upgrading Kanka
 
 A daily workflow, `.github/workflows/kanka-upstream-watch.yml`, opens one issue per upstream release: always the **next** release after the pinned one, never the latest. That issue carries the upgrade checklist and the backup and rollback commands, so follow it rather than bumping `KANKA_VERSION` by hand. The workflow also keeps a single issue open while the pinned Kanka has upstream security findings that aren't listed in `.github/upstream-audit-accepted.txt` (each entry there needs a reason). Its logic is tested by `.github/scripts/test-kanka-watch.sh`, which runs in CI whenever those files change.

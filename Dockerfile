@@ -57,4 +57,9 @@ RUN f=app/Services/Search/AdminPageService.php \
  && test "$(grep -c "route('campaign_plugins.index', \$campaign)" "$f")" = 1 \
  && perl -0pi -e "s/(\n\s*)(\[\n[^\[\]]*?campaign_plugins\.index[^\[\]]*?\]),/\$1...(config('marketplace.enabled') ? [\$2] : []),/" "$f" \
  && grep -q "config('marketplace.enabled')" "$f" && php -l "$f"
+# Kanka's tooltip allow-list strips list markup, leaving mentions as loose flex items on their own line. Fails the build if upstream changes or fixes it.
+RUN f=config/purify.php \
+ && test "$(grep -c "^ *'p', 'div', 'span',\$" "$f")" = 1 \
+ && sed -i "s/^\( *\)'p', 'div', 'span',\$/&\n\1'ul', 'ol', 'li', 'em', 'blockquote',/" "$f" \
+ && grep -q "'ul', 'ol', 'li', 'em', 'blockquote'," "$f" && php -l "$f"
 USER www-data
