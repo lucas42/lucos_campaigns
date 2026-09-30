@@ -98,7 +98,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh api repos/owlchester/kanka/security-advisories > advisories.json
       - name: Filter through the accepted list
-        run: .github/scripts/kanka-audit-findings.sh composer-audit.json yarn-audit.ndjson advisories.json .github/upstream-audit-accepted.txt audit-out
+        run: .github/scripts/kanka-audit-findings.sh composer-audit.json kanka-src/composer.lock yarn-audit.ndjson advisories.json .github/upstream-audit-accepted.txt audit-out
       - name: Create, update or close the findings issue
         env:
           GH_TOKEN: ${{ github.token }}

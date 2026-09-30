@@ -37,20 +37,45 @@ printf 'ARG KANKA_VERSION=main\nARG KANKA_COMMIT=%s\n' "$(printf 'a%.0s' {1..40}
 
 echo "# audit findings: the real 3.15 output"
 o=$tmp/out
-"$here/kanka-audit-findings.sh" "$fx/composer-clean.json" "$fx/yarn-3.15.ndjson" "$fx/advisories-none.json" "$accepted" "$o"
+"$here/kanka-audit-findings.sh" "$fx/composer-clean.json" "$fx/composer-lock.json" "$fx/yarn-3.15.ndjson" "$fx/advisories-none.json" "$accepted" "$o"
 expect "3.15 has 5 distinct advisories, all accepted, so 0 findings" "5 0" "$(jq length "$o/all.json") $(jq length "$o/findings.json")"
 expect "no stale accepted entries" "0" "$(grep -c . "$o/stale.txt" || true)"
-: > "$tmp/none.txt"; "$here/kanka-audit-findings.sh" "$fx/composer-clean.json" "$fx/yarn-3.15.ndjson" "$fx/advisories-none.json" "$tmp/none.txt" "$o"
+: > "$tmp/none.txt"; "$here/kanka-audit-findings.sh" "$fx/composer-clean.json" "$fx/composer-lock.json" "$fx/yarn-3.15.ndjson" "$fx/advisories-none.json" "$tmp/none.txt" "$o"
 expect "with nothing accepted, the 5 yarn advisories surface (deduped across paths)" "5" "$(jq length "$o/findings.json")"
-"$here/kanka-audit-findings.sh" "$fx/composer-finding.json" "$fx/yarn-3.15.ndjson" "$fx/advisories-one.json" "$accepted" "$o"
+"$here/kanka-audit-findings.sh" "$fx/composer-finding.json" "$fx/composer-lock.json" "$fx/yarn-3.15.ndjson" "$fx/advisories-one.json" "$accepted" "$o"
 expect "composer and Kanka advisories surface; accepted yarn ones don't" "GHSA-test-kanka-0001 PKSA-test-0001" "$(jq -r '[.[].id] | sort | join(" ")' "$o/findings.json")"
 { echo 'GHSA-gone-0000-0000  # stale (2026-01-01)'; cat "$accepted"; } > "$tmp/acc-stale.txt"
-"$here/kanka-audit-findings.sh" "$fx/composer-clean.json" "$fx/yarn-3.15.ndjson" "$fx/advisories-none.json" "$tmp/acc-stale.txt" "$o"
+"$here/kanka-audit-findings.sh" "$fx/composer-clean.json" "$fx/composer-lock.json" "$fx/yarn-3.15.ndjson" "$fx/advisories-none.json" "$tmp/acc-stale.txt" "$o"
 expect "a stale accepted entry is reported" "GHSA-gone-0000-0000" "$(cat "$o/stale.txt")"
-echo > "$tmp/empty"; "$here/kanka-audit-findings.sh" "$tmp/empty" "$fx/yarn-3.15.ndjson" "$fx/advisories-none.json" "$accepted" "$o" >/dev/null 2>&1
+echo > "$tmp/empty"; "$here/kanka-audit-findings.sh" "$tmp/empty" "$fx/composer-lock.json" "$fx/yarn-3.15.ndjson" "$fx/advisories-none.json" "$accepted" "$o" >/dev/null 2>&1
 expect "an incomplete composer result fails rather than reading as clean" "1" "$?"
-"$here/kanka-audit-findings.sh" "$fx/composer-clean.json" "$tmp/empty" "$fx/advisories-none.json" "$accepted" "$o" >/dev/null 2>&1
+"$here/kanka-audit-findings.sh" "$fx/composer-clean.json" "$fx/composer-lock.json" "$tmp/empty" "$fx/advisories-none.json" "$accepted" "$o" >/dev/null 2>&1
 expect "an incomplete yarn result fails" "1" "$?"
+
+echo "# audit: counts in the log, and an audit that audited nothing fails"
+out=$("$here/kanka-audit-findings.sh" "$fx/composer-clean.json" "$fx/composer-lock.json" "$fx/yarn-3.15.ndjson" "$fx/advisories-none.json" "$accepted" "$tmp/counts" 2>&1); code=$?
+expect "real 3.15 fixtures exit 0" "0" "$code"
+contains "the log says how much was audited" "$out" "audited: 505 yarn dependencies, 2 composer packages"
+contains "the log shows the three counts" "$out" "findings: 5 before filtering, 0 unaccepted, 0 stale accepted entries (of 5 accepted)"
+lacks "no warning when the accepted entries are still found" "$out" "::warning::"
+out=$("$here/kanka-audit-findings.sh" "$fx/composer-clean.json" "$fx/composer-lock.json" "$fx/yarn-zero-deps.ndjson" "$fx/advisories-none.json" "$accepted" "$tmp/z1" 2>&1); code=$?
+expect "yarn audit of zero dependencies fails" "1" "$code"
+contains "...and says why" "$out" "audited zero dependencies"
+"$here/kanka-audit-findings.sh" "$fx/composer-clean.json" "$fx/composer-lock.json" "$fx/yarn-no-count.ndjson" "$fx/advisories-none.json" "$accepted" "$tmp/z2" >/dev/null 2>&1
+expect "a yarn summary with no dependency count fails" "1" "$?"
+out=$("$here/kanka-audit-findings.sh" "$fx/composer-clean.json" "$fx/composer-lock-empty.json" "$fx/yarn-3.15.ndjson" "$fx/advisories-none.json" "$accepted" "$tmp/z3" 2>&1); code=$?
+expect "a composer.lock with no packages fails (dev-only packages don't count)" "1" "$code"
+contains "...and says why" "$out" "composer.lock lists no packages"
+"$here/kanka-audit-findings.sh" "$fx/composer-clean.json" "$tmp/no-such-lock.json" "$fx/yarn-3.15.ndjson" "$fx/advisories-none.json" "$accepted" "$tmp/z4" >/dev/null 2>&1
+expect "a missing composer.lock fails" "1" "$?"
+printf 'GHSA-gone-0001  # x (2026-01-01)\nGHSA-gone-0002  # y (2026-01-01)\n' > "$tmp/all-stale.txt"
+out=$("$here/kanka-audit-findings.sh" "$fx/composer-clean.json" "$fx/composer-lock.json" "$fx/yarn-3.15.ndjson" "$fx/advisories-none.json" "$tmp/all-stale.txt" "$tmp/s1" 2>&1); code=$?
+expect "every accepted entry stale: exits 0, not a failure" "0" "$code"
+contains "...but warns" "$out" "::warning::every accepted entry is stale"
+contains "...and names them" "$out" "stale accepted: GHSA-gone-0001 GHSA-gone-0002"
+out=$("$here/kanka-audit-findings.sh" "$fx/composer-clean.json" "$fx/composer-lock.json" "$fx/yarn-3.15.ndjson" "$fx/advisories-none.json" "$tmp/acc-stale.txt" "$tmp/s2" 2>&1)
+contains "one stale entry among live ones is listed" "$out" "stale accepted: GHSA-gone-0000-0000"
+lacks "...without the all-stale warning" "$out" "::warning::"
 
 echo "# issues: create, dedupe, update, close (fake gh)"
 mkdir -p "$tmp/bin"
@@ -94,12 +119,12 @@ expect "squat: a stranger's issue with the upgrade title doesn't suppress the re
 echo '[{"number":4,"title":"Upgrade Kanka to 3.13 (from 3.12)","state":"closed","body":"","user":{"login":"lucas42"},"author_association":"OWNER"}]' > "$FAKE_ISSUES"
 expect "squat: a collaborator's issue (closed as not planned, say) still suppresses it" "0 0" "$(run upgrade 3.12 3.13 "$sha" 2 2026-06-30) $(writes)"
 echo '[{"number":9,"title":"Upstream security findings in pinned Kanka","state":"open","body":"stranger text","user":{"login":"stranger"},"author_association":"NONE"}]' > "$FAKE_ISSUES"
-"$here/kanka-audit-findings.sh" "$fx/composer-finding.json" "$fx/yarn-3.15.ndjson" "$fx/advisories-one.json" "$accepted" "$tmp/two"
+"$here/kanka-audit-findings.sh" "$fx/composer-finding.json" "$fx/composer-lock.json" "$fx/yarn-3.15.ndjson" "$fx/advisories-one.json" "$accepted" "$tmp/two"
 res=$(run findings "$tmp/two/findings.json" 3.15)
 expect "squat: a stranger's issue with the findings title is not adopted or edited" "0 POST repos/o/r/issues" "$res $(cut -d' ' -f1-2 "$FAKE_LOG")"
 
 echo '[{"number":7,"title":"Upgrade Kanka to 3.16 (from 3.15)","state":"open","body":""}]' > "$FAKE_ISSUES"
-"$here/kanka-audit-findings.sh" "$fx/composer-finding.json" "$fx/yarn-3.15.ndjson" "$fx/advisories-one.json" "$accepted" "$tmp/two"
+"$here/kanka-audit-findings.sh" "$fx/composer-finding.json" "$fx/composer-lock.json" "$fx/yarn-3.15.ndjson" "$fx/advisories-one.json" "$accepted" "$tmp/two"
 expect "findings: created when there are findings and no open issue" "0 1" "$(run findings "$tmp/two/findings.json" 3.15) $(writes)"
 fbody=$(sed 's/^POST [^ ]* //' "$FAKE_LOG" | jq -r .body); ftitle=$(sed 's/^POST [^ ]* //' "$FAKE_LOG" | jq -r .title)
 expect "findings: single fixed title" "Upstream security findings in pinned Kanka" "$ftitle"
@@ -108,7 +133,7 @@ contains "findings: links an open upgrade issue" "$fbody" "#7"
 lacks "findings: upstream text cannot mention anyone" "$fbody" "@someone"
 lacks "findings: upstream text cannot break out of its code span" "$fbody" "with \`backticks\`"
 echo "# findings: hostile upstream text (newlines, mentions, backticks, pipes, odd URLs)"
-"$here/kanka-audit-findings.sh" "$fx/composer-hostile.json" "$fx/yarn-3.15.ndjson" "$fx/advisories-none.json" "$accepted" "$tmp/hostile"
+"$here/kanka-audit-findings.sh" "$fx/composer-hostile.json" "$fx/composer-lock.json" "$fx/yarn-3.15.ndjson" "$fx/advisories-none.json" "$accepted" "$tmp/hostile"
 echo '[]' > "$FAKE_ISSUES"; run findings "$tmp/hostile/findings.json" 3.15 > /dev/null
 hbody=$(sed 's/^POST [^ ]* //' "$FAKE_LOG" | jq -r .body)
 rows=$(printf '%s\n' "$hbody" | grep -c '^| [A-Za-z]' || true)
@@ -125,7 +150,7 @@ lacks "hostile: a non-https URL is not linked" "$hbody" "insecure.invalid"
 lacks "hostile: a URL that breaks out of the link is not linked" "$hbody" "evil.invalid"
 longtitle=$(printf 'x%.0s' {1..500})
 jq -n --arg t "$longtitle" '{advisories: {"p/q": [{advisoryId: "PKSA-long", packageName: "p/q", title: $t, link: "https://a.invalid/x", severity: "low"}]}, abandoned: [], filter: []}' > "$tmp/composer-long.json"
-"$here/kanka-audit-findings.sh" "$tmp/composer-long.json" "$fx/yarn-3.15.ndjson" "$fx/advisories-none.json" "$accepted" "$tmp/long"
+"$here/kanka-audit-findings.sh" "$tmp/composer-long.json" "$fx/composer-lock.json" "$fx/yarn-3.15.ndjson" "$fx/advisories-none.json" "$accepted" "$tmp/long"
 echo '[]' > "$FAKE_ISSUES"; run findings "$tmp/long/findings.json" 3.15 > /dev/null
 lbody=$(sed 's/^POST [^ ]* //' "$FAKE_LOG" | jq -r .body)
 expect "hostile: a 500-character title is capped at 200" "200" "$(printf '%s' "$lbody" | grep -o 'x\{1,\}' | awk '{ print length($0) }' | sort -n | tail -1)"
@@ -134,7 +159,7 @@ expect "findings: an up-to-date open issue is left alone" "0 0" "$(run findings 
 jq -n '[{"number":9,"title":"Upstream security findings in pinned Kanka","state":"open","body":"old"}]' > "$FAKE_ISSUES"
 res=$(run findings "$tmp/two/findings.json" 3.15)
 expect "findings: an out-of-date open issue is updated, not duplicated" "0 PATCH repos/o/r/issues/9" "$res $(cut -d' ' -f1-2 "$FAKE_LOG")"
-"$here/kanka-audit-findings.sh" "$fx/composer-clean.json" "$fx/yarn-3.15.ndjson" "$fx/advisories-none.json" "$accepted" "$tmp/zero"
+"$here/kanka-audit-findings.sh" "$fx/composer-clean.json" "$fx/composer-lock.json" "$fx/yarn-3.15.ndjson" "$fx/advisories-none.json" "$accepted" "$tmp/zero"
 res=$(run findings "$tmp/zero/findings.json" 3.15)
 expect "findings: closes itself once nothing remains" "0 POST repos/o/r/issues/9/comments|PATCH repos/o/r/issues/9" "$res $(cut -d' ' -f1-2 "$FAKE_LOG" | paste -sd'|')"
 contains "findings: the close is 'completed'" "$(cat "$FAKE_LOG")" '"state":"closed","state_reason":"completed"'
