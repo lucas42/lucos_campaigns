@@ -52,4 +52,9 @@ RUN fa=public/vendor/fontawesome/6.0.0 \
  && test -f "$fa/css/all.min.css" && test -f "$fa/webfonts/fa-solid-900.woff2" \
  && { echo; cat /tmp/fontawesome-free-fallback.css; } >> "$fa/css/all.min.css" \
  && rm /tmp/fontawesome-free-fallback.css
+# Kanka's command search lists the plugins page even though its route only exists with the marketplace on (ADR-0001 leaves it off). Fails the build if upstream changes or fixes it.
+RUN f=app/Services/Search/AdminPageService.php \
+ && test "$(grep -c "route('campaign_plugins.index', \$campaign)" "$f")" = 1 \
+ && perl -0pi -e "s/(\n\s*)(\[\n[^\[\]]*?campaign_plugins\.index[^\[\]]*?\]),/\$1...(config('marketplace.enabled') ? [\$2] : []),/" "$f" \
+ && grep -q "config('marketplace.enabled')" "$f" && php -l "$f"
 USER www-data
