@@ -61,6 +61,8 @@ One-off, run on lucas42's own machine through the normal gate; nothing is added 
 
 Kanka's UI is written for Font Awesome Pro, but without a Pro kit (`FONTAWESOME_KIT`) it loads only the bundled Free 6.0.0, which has few regular icons and no light, thin or duotone ones. Most icons would render blank. `docker/fontawesome-free-fallback.css` is appended to that bundled stylesheet in the `Dockerfile`: missing icons fall back to Free solid, and seven Pro-only module icons have Free stand-ins. The build fails if Kanka moves the stylesheet. Setting a kit turns the fallback off. When you pick an icon in Kanka (tags, links, timeline elements, bookmarks), its picker links to Font Awesome's full catalogue, so choose a **Free** icon or it will render blank.
 
+The `Dockerfile` also patches Kanka's command search (the top-bar `command-center`) to skip the plugins page while the marketplace is off; without it `GET /w/{campaign}/search/command` returns a 500 because the plugins route isn't registered. The build fails if Kanka changes that code, so drop the patch once upstream fixes it.
+
 ## Upgrading Kanka
 
 A daily workflow, `.github/workflows/kanka-upstream-watch.yml`, opens one issue per upstream release: always the **next** release after the pinned one, never the latest. That issue carries the upgrade checklist and the backup and rollback commands, so follow it rather than bumping `KANKA_VERSION` by hand. The workflow also keeps a single issue open while the pinned Kanka has upstream security findings that aren't listed in `.github/upstream-audit-accepted.txt` (each entry there needs a reason). Its logic is tested by `.github/scripts/test-kanka-watch.sh`, which runs in CI whenever those files change.
