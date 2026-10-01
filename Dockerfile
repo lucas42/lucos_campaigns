@@ -29,7 +29,22 @@ RUN npm install --global yarn@1.22.22
 WORKDIR /kanka
 COPY --from=source /kanka/ ./
 RUN yarn audit || true
-RUN yarn install --frozen-lockfile && yarn build
+RUN yarn install --frozen-lockfile
+# Pinned-property stat block (docker/lucos-statblock.css) and the pencil's Free font fallback. Fails the build if upstream moves any markup or CSS these rely on.
+COPY docker/lucos-statblock.css /kanka/resources/css/lucos-statblock.css
+RUN a=resources/css/attributes/attributes.css m=resources/css/app.css \
+      p=resources/views/entities/components/pins.blade.php b=resources/views/entities/components/attributes.blade.php \
+ && test "$(grep -c 'font-family: "Font Awesome 6 Pro";' $a)" = 1 \
+ && test "$(grep -c '^@import "./attributes/attributes.css";' $m)" = 1 \
+ && test "$(grep -c 'class="pins flex flex-col gap-2"' $p)" = 1 \
+ && test "$(grep -cF 'data-attribute="{{ $attribute->name }}"' $b)" = 1 \
+ && grep -q 'pinned-attribute-section' $b \
+ && sed -i 's/font-family: "Font Awesome 6 Pro";/font-family: "Font Awesome 6 Pro", "Font Awesome 6 Free";/' $a \
+ && sed -i 's#^@import "./attributes/attributes.css";#&\n@import "./lucos-statblock.css";#' $m \
+ && grep -q '"Font Awesome 6 Free";' $a && grep -q 'lucos-statblock.css' $m
+RUN yarn build \
+ && grep -lq 'data-attribute="STR mod"' public/build/assets/app-*.css \
+ && grep -q 'font-family:"Font Awesome 6 Pro","Font Awesome 6 Free"' public/build/assets/app-*.css
 
 FROM serversideup/php:8.5-fpm-nginx-v4.5.1@sha256:531f20f5e74eb834de878ea8b5bcb6fd43923828b20e96783e97445273a705a5
 ARG VERSION
