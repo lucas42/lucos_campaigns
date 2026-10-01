@@ -62,4 +62,12 @@ RUN f=config/purify.php \
  && test "$(grep -c "^ *'p', 'div', 'span',\$" "$f")" = 1 \
  && sed -i "s/^\( *\)'p', 'div', 'span',\$/&\n\1'ul', 'ol', 'li', 'em', 'blockquote',/" "$f" \
  && grep -q "'ul', 'ol', 'li', 'em', 'blockquote'," "$f" && php -l "$f"
+# Kanka's Relations table "Location" column looks up Location by the target's entity_id, so non-location targets show an unrelated location. Render their real entity_locations instead. Fails the build if upstream changes or fixes it.
+RUN l=app/Renderers/Layouts/Entity/Relation.php c=app/Http/Controllers/Entity/RelationController.php \
+ && test "$(grep -c "'render' => Standard::LOCATION," "$l")" = 1 \
+ && test "$(grep -c "'target.location' => fn" "$c")" = 1 \
+ && test "$(grep -c "'target.location.entity' => fn" "$c")" = 1 \
+ && sed -i "s/'render' => Standard::LOCATION,/'render' => Standard::ENTITY_LOCATIONS,/" "$l" \
+ && sed -i "/'target.location.entity' => fn/d; s/'target.location' => fn (\$sub) => \$sub->select('id'),/'target.locations',/" "$c" \
+ && grep -q "'target.locations'," "$c" && grep -q "Standard::ENTITY_LOCATIONS" "$l" && php -l "$l" && php -l "$c"
 USER www-data
