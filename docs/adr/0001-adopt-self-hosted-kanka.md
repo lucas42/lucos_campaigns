@@ -297,17 +297,20 @@ resolves to `MAIL_DRIVER`. `MAIL_MAILER` and `MAIL_ENCRYPTION` are both ignored.
 Logging mail was the minimal-footprint default, not a decision against sending mail.
 Sending through `lucos_mail` is lucas42/lucos_campaigns#19.
 
-## Amendment (2026-10-01): mail is sent through `lucos_mail`
+## Amendment (2026-10-01): production mail goes through `lucos_mail`
 
-Decision 2 says mail is logged. That no longer applies to production. Following
-lucas42/lucos_campaigns#19, Kanka sends its mail through `lucos_mail`:
+Decision 2 says mail is logged. Following lucas42/lucos_campaigns#19, production is
+configured to send Kanka's mail through `lucos_mail` instead. Mail starts sending once
+production's credentials are in place (below); until then it is still logged.
 
 - **Where it goes:** `mail.l42.eu:25` over STARTTLS, authenticating as
   `campaigns@l42.eu`, which is also the From and envelope sender, so SPF aligns for
   DMARC. The container reaches it by its public name, so decision 6 (no shared estate
   network) still holds.
-- **Per environment:** `MAIL_DRIVER` comes from lucos_creds. Production sets it to
-  `smtp`, along with `MAIL_PASSWORD`. Development leaves it unset and stays on `log`.
+- **Per environment:** `MAIL_DRIVER` comes from lucos_creds. Production switches to
+  sending when its creds set `MAIL_DRIVER=smtp` and `MAIL_PASSWORD`, and `lucos_mail`
+  has a SASL account for `campaigns@l42.eu`. Development leaves it unset and stays on
+  `log`.
   Compose defaults it to `log` (`${MAIL_DRIVER:-log}`), because Kanka's own default is
   unauthenticated SMTP to mailgun, the failure described in the previous amendment.
 - **TLS:** Kanka's `config/mail.php` hardcodes `verify_peer => false`, and it never
