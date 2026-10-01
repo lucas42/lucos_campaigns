@@ -45,11 +45,15 @@ RUN a=resources/css/attributes/attributes.css m=resources/css/app.css \
  && test "$(grep -c 'class="pins flex flex-col gap-2"' $p)" = 1 \
  && test "$(grep -cF 'data-attribute="{{ $attribute->name }}"' $b)" = 1 \
  && grep -q 'pinned-attribute-section' $b \
+ && test "$(grep -c 'sidebar-section-box entity-pins' $p)" = 1 \
+ && test "$(grep -c 'class="sidebar-section-title ' $p)" = 1 \
+ && test "$(grep -c 'class="sidebar-elements ' $p)" = 1 \
  && sed -i 's/font-family: "Font Awesome 6 Pro";/font-family: "Font Awesome 6 Pro", "Font Awesome 6 Free";/' $a \
  && sed -i 's#^@import "./attributes/attributes.css";#&\n@import "./lucos-statblock.css";#' $m \
  && grep -q '"Font Awesome 6 Free";' $a && grep -q 'lucos-statblock.css' $m
 RUN yarn build \
  && grep -lq 'data-attribute="STR mod"' public/build/assets/app-*.css \
+ && grep -q '\.entity-pins:has(' public/build/assets/app-*.css \
  && grep -q 'font-family:"Font Awesome 6 Pro","Font Awesome 6 Free"' public/build/assets/app-*.css
 
 FROM serversideup/php:8.5-fpm-nginx-v4.5.1@sha256:531f20f5e74eb834de878ea8b5bcb6fd43923828b20e96783e97445273a705a5
