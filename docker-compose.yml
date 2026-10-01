@@ -26,8 +26,14 @@ services:
       - SESSION_DRIVER=database
       - SESSION_SECURE_COOKIE=true
       - BROADCAST_DRIVER=null
-      - MAIL_DRIVER=log
-      - MAIL_FROM_ADDRESS=noreply@l42.eu
+      # `log` unless creds set smtp (production only); Kanka's own default is smtp to mailgun, and an empty value throws.
+      - MAIL_DRIVER=${MAIL_DRIVER:-log}
+      - MAIL_HOST=mail.l42.eu
+      - MAIL_PORT=25
+      - MAIL_USERNAME=campaigns@l42.eu
+      - MAIL_PASSWORD
+      - MAIL_FROM_ADDRESS=campaigns@l42.eu
+      - MAIL_FROM_NAME=Campaigns
       - FILESYSTEM_DRIVER=public
       - LOG_CHANNEL=daily
       - THUMBOR_KEY=
