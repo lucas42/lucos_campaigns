@@ -39,6 +39,8 @@ services:
       - SSL_MODE=off
       - PHP_DISPLAY_ERRORS=Off
       - PHP_OPCACHE_ENABLE=1
+      # Trust host-local Docker bridge peers (the router arrives as the gateway) so X-Forwarded-* apply; '*' doesn't work with Kanka's config.
+      - TRUSTED_PROXIES=172.16.0.0/12
       - PHP_FPM_PM_MAX_CHILDREN=5
     volumes:
       - storage:/var/www/html/storage
