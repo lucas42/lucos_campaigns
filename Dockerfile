@@ -10,6 +10,12 @@ RUN apk add --no-cache git
 RUN git clone --quiet --depth 1 --branch "$KANKA_VERSION" https://github.com/owlchester/kanka.git /kanka \
  && test "$(git -C /kanka rev-parse HEAD)" = "$KANKA_COMMIT" \
  && rm -rf /kanka/.git
+# Kanka's mail config hardcodes verify_peer=false and never requires TLS; fail the build if this edit stops matching.
+RUN sed -i "s/^    'verify_peer' => false,\$/    'verify_peer' => true,\\n    'require_tls' => true,\\n    'timeout' => 10,/" /kanka/config/mail.php \
+ && grep -q "^    'verify_peer' => true,\$" /kanka/config/mail.php \
+ && grep -q "^    'require_tls' => true,\$" /kanka/config/mail.php \
+ && grep -q "^    'timeout' => 10,\$" /kanka/config/mail.php \
+ && ! grep -q "'verify_peer' => false" /kanka/config/mail.php
 
 FROM composer:2@sha256:9715c7f69044da2a212a5fbde29ee7da24e364d426560ae6367b060236f847d7 AS composer
 

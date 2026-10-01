@@ -36,6 +36,7 @@ Users also need the `campaigns:use` scope granted in aithne to get past the gate
 
 Optional:
 
+- `MAIL_DRIVER` (default `log`) and `MAIL_PASSWORD`: set `MAIL_DRIVER=smtp` and the `campaigns@l42.eu` password in **production only**. The matching SMTP account is a line in lucos_mail's `DOVECOT_USERS`.
 - `APP_REGISTRATION_ENABLED` (default `false`), only used during [first user](#first-user) setup.
 - `AITHNE_TOKEN_URL` and `AITHNE_JWKS_URL`: the addresses oauth2-proxy uses to call aithne from inside its container. They default to paths under `AITHNE_ORIGIN`, so leave them unset unless the container can't reach that origin (in development, where `AITHNE_ORIGIN` is `localhost`).
 
@@ -45,7 +46,7 @@ Optional:
 2. Register the account.
 3. Set `APP_REGISTRATION_ENABLED` to `false` (or remove it: the default is false), redeploy, and check `POST /register` now returns 404.
 
-Mail is logged (`MAIL_DRIVER=log`; Kanka reads that legacy name, not `MAIL_MAILER`), so emailed reset links land in `storage/logs` (daily, 7 days). Reset a password with `docker exec lucos_campaigns_app php artisan users:reset-password <user> [password]` instead of the emailed flow.
+Production sends Kanka's mail through lucos_mail as `campaigns@l42.eu` (`MAIL_DRIVER=smtp` and `MAIL_PASSWORD` in creds; port 25, and the `Dockerfile` makes Kanka verify the certificate and require TLS). Anywhere `MAIL_DRIVER` isn't set, including development, it defaults to `log`: mail goes to `storage/logs` (daily, 7 days) and nothing is sent. Kanka reads `MAIL_DRIVER`, not `MAIL_MAILER`. `docker exec lucos_campaigns_app php artisan users:reset-password <user> [password]` still resets a password without the emailed flow.
 
 Each start also runs `docker/60-kanka-first-run.sh`: it seeds Kanka, creates the Passport keys and client, and builds the search index, skipping each step once its own result exists, so a failure part-way is retried on the next start. To force a search rebuild, run `docker exec lucos_campaigns_app php artisan setup:meilisearch`.
 
