@@ -1,0 +1,56 @@
+/*
+ * Presents the pinned properties of the "Commoner" property kit as a stat block.
+ * Keyed on property NAMES (data-attribute), never on position, so reordering the kit is safe.
+ * Scoped to a sidebar that has an ability pair; any other entity's sidebar is untouched.
+ */
+.pins:has(> .pinned-attribute[data-attribute="STR mod"]) {
+    display: grid;
+    grid-template-columns: 1fr 3.5rem;
+
+    > * { grid-column: 1 / -1; }
+
+    /* Section headings: Stats, Abilities, Features */
+    > .pinned-attribute-section > strong {
+        font-size: .75rem;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+    }
+
+    > .pinned-attribute > p { font-variant-numeric: tabular-nums; }
+
+    /* Long text values: label above, value below, left-aligned */
+    > .pinned-attribute:is([data-attribute="Type"], [data-attribute="Skills"], [data-attribute="Senses"], [data-attribute="Languages"]) > p {
+        flex-basis: 100%;
+        text-align: left;
+    }
+
+    /* Score and modifier share one line: "STR   16  (+3)" */
+    > .pinned-attribute:is([data-attribute="STR"], [data-attribute="DEX"], [data-attribute="CON"],
+                           [data-attribute="INT"], [data-attribute="WIS"], [data-attribute="CHA"]) {
+        grid-column: 1;
+        flex-wrap: nowrap;
+        justify-content: space-between;
+    }
+    > .pinned-attribute:is([data-attribute="STR mod"], [data-attribute="DEX mod"], [data-attribute="CON mod"],
+                           [data-attribute="INT mod"], [data-attribute="WIS mod"], [data-attribute="CHA mod"]) {
+        grid-column: 2;
+        flex-wrap: nowrap;
+        gap: 0;
+
+        &::before { content: "("; }
+        &::after { content: ")"; }
+        /* Kanka gives every value min-width: 1rem, which would leave a gap before the bracket */
+        > p { flex-grow: 0; min-width: 0; text-align: left; }
+        /* The score's pencil already marks the row as editable; keep "(3)" clean */
+        > p::after { content: none; }
+        /* Hide the label visually but keep it for screen readers ("STR mod, 3") */
+        > strong {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            overflow: hidden;
+            clip-path: inset(50%);
+            white-space: nowrap;
+        }
+    }
+}
