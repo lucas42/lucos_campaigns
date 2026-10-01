@@ -2,10 +2,11 @@
  * Presents the pinned properties of the "Commoner" property kit as a stat block.
  * Keyed on property NAMES (data-attribute), never on position, so reordering the kit is safe.
  * Scoped to a sidebar that has an ability pair; any other entity's sidebar is untouched.
+ * Column 2 is 4.5rem so a hover pencil fits beside the modifier without resizing the grid.
  */
 .pins:has(> .pinned-attribute[data-attribute="STR mod"]) {
     display: grid;
-    grid-template-columns: 1fr 3.5rem;
+    grid-template-columns: 1fr 4.5rem;
 
     > * { grid-column: 1 / -1; }
 
@@ -36,13 +37,12 @@
         grid-column: 2;
         flex-wrap: nowrap;
         gap: 0;
+        justify-content: flex-end;
 
         &::before { content: "("; }
         &::after { content: ")"; }
         /* Kanka gives every value min-width: 1rem, which would leave a gap before the bracket */
         > p { flex-grow: 0; min-width: 0; text-align: left; }
-        /* The score's pencil already marks the row as editable; keep "(3)" clean */
-        > p::after { content: none; }
         /* Hide the label visually but keep it for screen readers ("STR mod, 3") */
         > strong {
             position: absolute;
@@ -53,4 +53,25 @@
             white-space: nowrap;
         }
     }
+}
+
+/* The whole pins box becomes the stat block: framed, with a title bar. Colours come from Kanka's theme tokens, so light and dark both work. */
+.entity-pins:has(.pinned-attribute[data-attribute="STR mod"]) {
+    border: 2px solid hsl(var(--p) / .45);
+    border-radius: .25rem;
+    background: hsl(var(--p) / .06);
+    box-shadow: 0 1px 4px hsl(var(--bc) / .15);
+    gap: 0;
+
+    > .sidebar-section-title {
+        background: hsl(var(--p));
+        color: hsl(var(--pc));
+        border-bottom: 0;
+        padding: .25rem .5rem;
+
+        a { color: inherit; }
+    }
+    > .sidebar-elements { padding: .5rem; }
+    .pinned-attribute-section { border-color: hsl(var(--p) / .45); padding-top: .25rem; }
+    .pinned-attribute-section > strong { color: hsl(var(--p)); }
 }
