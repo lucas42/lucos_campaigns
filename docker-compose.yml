@@ -96,6 +96,8 @@ services:
       - MEILI_MASTER_KEY=${MEILI_MASTER_KEY}
       - MEILI_NO_ANALYTICS=true
       - MEILI_MAX_INDEXING_MEMORY=256MiB
+      # Migrate the on-disk index in place when the engine version moves; without it every Meilisearch bump (even a patch) crash-loops on 'database version incompatible'.
+      - MEILI_UPGRADE_DB=true
     volumes:
       - search_data:/meili_data
     mem_limit: 512m
