@@ -12,3 +12,4 @@ GHSA-hrr3-gc8f-f4qj  # fast-uri host normalisation: build-time only, reached via
 GHSA-p98j-92pf-mc4p  # dompurify IN_PLACE/afterSanitize XSS (low): only reachable via jspdf, which Kanka uses for addImage/save only (never .html()), and no afterSanitize hook is set (2026-09-30)
 PKSA-m2dq-1fhr-29b1  # league/commonmark DisallowedRawHtml bypass: only used via Laravel Mail\Markdown, which escapes raw HTML and doesn't register that extension (2026-09-30)
 PKSA-m4t9-vsgq-8khn  # league/commonmark Table extension quadratic DoS: only reached via Laravel mail templates; inputs are Kanka-authored templates plus single-line values such as campaign name (2026-09-30)
+GHSA-vfj7-8cjw-p6xm  # braces stack-exhaustion DoS: build-time only, reached via @tiptap/cli > fast-glob > micromatch and via sass / vite-plugin-static-copy > chokidar, never imported by Kanka's resources/ and not shipped in the image; no patched braces release exists (2026-10-06)
