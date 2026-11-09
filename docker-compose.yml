@@ -90,7 +90,7 @@ services:
 
   lucos_campaigns_search:
     container_name: lucos_campaigns_search
-    image: getmeili/meilisearch:v1.56.0@sha256:1f578fa865f8251894b3bf38d6668d6209a3f451f8f65ab953e129d4c1db5ef4
+    image: getmeili/meilisearch:v1.56.1@sha256:b7ba431bf6f9b26cc86132798f3640964147a699cf23f026b74c6c05dbb1d60d
     environment:
       - MEILI_ENV=production
       - MEILI_MASTER_KEY=${MEILI_MASTER_KEY}
@@ -114,7 +114,7 @@ services:
   # Config follows lucos_locations' oauth2-proxy (see its comments for why each ES256/scope line is needed).
   lucos_campaigns_auth:
     container_name: lucos_campaigns_auth
-    image: quay.io/oauth2-proxy/oauth2-proxy:v7.15.5
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.15.6
     environment:
       - OAUTH2_PROXY_HTTP_ADDRESS=0.0.0.0:4180
       - OAUTH2_PROXY_PROVIDER=oidc
