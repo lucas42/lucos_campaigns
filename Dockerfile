@@ -17,7 +17,7 @@ RUN sed -i "s/^    'verify_peer' => false,\$/    'verify_peer' => true,\\n    'r
  && grep -q "^    'timeout' => 10,\$" /kanka/config/mail.php \
  && ! grep -q "'verify_peer' => false" /kanka/config/mail.php
 
-FROM composer:2@sha256:b6dcd72ca98fa19d0e5b8476de179859704891fad06dd9e0b96833d4c430a5fc AS composer
+FROM composer:2@sha256:8de2184c6de224f4689e8f80ed5f5edaf0030b6b8b7839a22a2bcb6722ac87d0 AS composer
 
 FROM serversideup/php:8.5-fpm-nginx-v4.5.1@sha256:531f20f5e74eb834de878ea8b5bcb6fd43923828b20e96783e97445273a705a5 AS vendor
 USER root
