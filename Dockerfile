@@ -29,7 +29,7 @@ COPY --from=source /kanka/ ./
 RUN composer audit || true
 RUN composer install --no-dev --optimize-autoloader --no-scripts --no-interaction
 
-FROM node:26-alpine@sha256:8996bb5821d62a8fd9bb27c1cb07462f3fdce6e47d640c6a881ead0b064ce216 AS assets
+FROM node:26-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5 AS assets
 # node 25+ images no longer bundle yarn; pin the classic version node:24 shipped.
 RUN npm install --global yarn@1.22.22
 WORKDIR /kanka
